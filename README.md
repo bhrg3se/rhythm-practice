@@ -40,8 +40,8 @@ then open `http://localhost:8000` in Chrome on the phone.
 opens in its own window and works offline after the first visit. Same on iOS
 Safari via Share → *Add to Home Screen*.
 
-Keyboard: `Space` play/stop · `N` new rhythm · `T` tap tempo · arrows on the
-tempo slider.
+Keyboard: `Space` play/stop · `N` new rhythm · `T` tap tempo · `0`–`5` level ·
+arrows on the tempo slider.
 
 ## Deploy
 
@@ -84,13 +84,25 @@ So 6/8 at 90 BPM means 90 dotted quarters per minute, clicking every eighth.
 
 ### Generator
 
-A note is `{t, d, rest?, tup?}` (start, duration, in quarters). `cellPool()`
-returns weighted **cells**, small patterns that fill one beat group (a quarter in
-simple time, a dotted quarter in 6/8) or a longer value (half, whole, dotted
-half). Higher complexity adds cells: eighths and offbeats at Medium; triplets,
-16ths and dotted rhythms at Hard. `makeBar()` picks weighted cells until the bar
-is full and rejects all-rest bars. `regen()` makes bar A, then a different bar B,
-giving `[A, A, A, B]`.
+A note is `{t, d, rest?, tup?}` (start, duration, in quarters). Rhythms are built
+from weighted **cells**, small patterns that fill one beat group (a quarter in
+simple time, a dotted quarter in 6/8) or a longer value. Cells live in two tables,
+`SIMPLE_CELLS` and `COMPOUND_CELLS`, written in note values (`"8. 16"`, `"t tr t"`,
+`"4.r"`; `r` = rest, `t` = triplet eighth). Each row has the level that introduces it:
+
+| level | name        | adds (simple time)                                   | adds (6/8)                         |
+|-------|-------------|------------------------------------------------------|------------------------------------|
+| 0     | Quarters    | quarter, half, whole / dotted half                   | dotted quarter, dotted half        |
+| 1     | Rests       | quarter and half rests                               | quarter + eighth, dotted-quarter rest |
+| 2     | Eighths     | eighth pairs                                         | three eighths                      |
+| 3     | Offbeats    | offbeat eighths, dotted quarter + eighth             | eighth + quarter, eighth rests     |
+| 4     | Sixteenths  | 16ths, dotted 8th + 16th, 8–16–16, 16–16–8, triplets | 16th groups, dotted 8th + 16th     |
+| 5     | Syncopation | 16–8–16, 16 + dotted 8th, 16th rests, 8–4–8, triplets with rests | more 16th mixes, rests inside beats |
+
+Each level includes everything below it (half rests are retired above level 3).
+To tune difficulty, edit the tables: add a row, or change a weight.
+`makeBar()` picks weighted cells until the bar is full and rejects all-rest bars.
+`regen()` makes bar A, then a different bar B, giving `[A, A, A, B]`.
 
 Because cells never cross a beat group, the notation stays readable: no ties,
 and beams always land on beat boundaries.
@@ -101,8 +113,8 @@ Each bar is one inline SVG in pixel units (`barSvg()`), re-rendered when the wid
 changes. A note head sits just right of its onset, so the playhead reaches it as
 it sounds. `durInfo()` maps a duration to a base value plus dot. Flagged notes
 inside one beat group with no rest between them are beamed: one primary beam, a
-secondary beam between adjacent 16ths, and a stub for a lone 16th. A triplet run
-gets a "3". Colours come from `currentColor`, so the variation bar turns coral via CSS.
+secondary beam between adjacent 16ths, and a stub for a lone 16th. A beamed
+triplet gets a "3" over the beam; a triplet broken by a rest gets a bracket. Colours come from `currentColor`, so the variation bar turns coral via CSS.
 
 ### Audio scheduler
 
@@ -122,4 +134,4 @@ already-scheduled clicks are silenced. If the tab was throttled, the scheduler
 skips ahead instead of firing a backlog. A Screen Wake Lock keeps the screen on
 while playing, because Android throttles timers once the screen sleeps.
 
-Settings (tempo, meter, complexity, toggles) persist in `localStorage`.
+Settings (tempo, meter, level, toggles) persist in `localStorage`.

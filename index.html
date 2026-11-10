@@ -88,6 +88,7 @@
   .chip{flex:1;min-width:56px;text-align:center;padding:11px 6px;border-radius:10px;border:1px solid var(--line);
     background:transparent;color:var(--muted);font-family:var(--sans);font-size:14px;cursor:pointer;font-weight:600}
   .chip.sel{background:var(--brass);color:#160b09;border-color:var(--brass)}
+  .chips.levels .chip{min-width:0;font-family:var(--mono)}
   .toggles{display:flex;flex-wrap:wrap;gap:8px}
   .tg{flex:1 1 150px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;
     border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font-size:13px;cursor:pointer;font-weight:600}
@@ -146,11 +147,14 @@
       </div>
     </div>
     <div class="ctl">
-      <span class="k">Complexity</span>
-      <div class="chips" id="cxChips">
-        <button class="chip" data-cx="1">Simple</button>
-        <button class="chip sel" data-cx="2">Medium</button>
-        <button class="chip" data-cx="3">Hard</button>
+      <span class="k">Level · <span id="lvName">Eighths</span></span>
+      <div class="chips levels" id="lvChips">
+        <button class="chip" data-lv="0">0</button>
+        <button class="chip" data-lv="1">1</button>
+        <button class="chip sel" data-lv="2">2</button>
+        <button class="chip" data-lv="3">3</button>
+        <button class="chip" data-lv="4">4</button>
+        <button class="chip" data-lv="5">5</button>
       </div>
     </div>
     <div class="ctl" style="margin-bottom:0">
@@ -168,7 +172,7 @@
     </div>
   </div>
 
-  <div class="hint">Bars 1–3 repeat · bar 4 varies · Space plays/stops, N for a new rhythm.<br>Add to Home Screen to run like an app, offline.</div>
+  <div class="hint">Bars 1–3 repeat · bar 4 varies<br>Keys: Space play/stop · N new rhythm · 0–5 level<br>Add to Home Screen to run like an app, offline.</div>
   <a class="support" id="support" hidden target="_blank" rel="noopener">☕ Buy me a coffee</a>
 
 <script>
@@ -189,7 +193,7 @@
 
   // ---------- state ----------
   const S = {
-    bpm: 90, sig: "4/4", complexity: 2,
+    bpm: 90, sig: "4/4", level: 2,
     met: true, notes: true, hap: false, countIn: false,
     rows: [], pending: null, playing: false,
   };
@@ -199,52 +203,50 @@
 
   // ---------- notation generator ----------
   // A "note" = {t: start, d: duration, rest?: bool, tup?: 3}
-  // A "cell" = weighted building block that fills `len` quarters.
-  function cellPool(cx){
-    const p = [];
-    const add = (w,len,notes) => p.push({w,len,notes});
-    if(S.sig === "6/8"){
-      // compound meter: cells fill one dotted-quarter beat
-      add(4,1.5,[{t:0,d:1.5}]);                                  // dotted quarter
-      add(2,1.5,[{t:0,d:1.5,rest:true}]);
-      add(4,1.5,[{t:0,d:1},{t:1,d:.5}]);                         // quarter + eighth
-      if(cx>=2){
-        add(5,1.5,[{t:0,d:.5},{t:.5,d:.5},{t:1,d:.5}]);          // three eighths
-        add(2,1.5,[{t:0,d:.5},{t:.5,d:1}]);                      // eighth + quarter
-        add(2,1.5,[{t:0,d:.5,rest:true},{t:.5,d:.5},{t:1,d:.5}]);
-      }
-      if(cx>=3){
-        add(3,1.5,[{t:0,d:.25},{t:.25,d:.25},{t:.5,d:.5},{t:1,d:.5}]);
-        add(2,1.5,[{t:0,d:.5},{t:.5,d:.25},{t:.75,d:.25},{t:1,d:.5}]);
-        add(2,1.5,[{t:0,d:.75},{t:.75,d:.25},{t:1,d:.5}]);       // siciliano
-      }
-      add(1,3,[{t:0,d:3}]);                                      // dotted half
-      return p;
-    }
-    const T = 1/3;
-    add(6,1,[{t:0,d:1}]); add(3,1,[{t:0,d:1,rest:true}]);
-    if(cx>=2){
-      add(6,1,[{t:0,d:.5},{t:.5,d:.5}]);
-      add(2,1,[{t:0,d:.5},{t:.5,d:.5,rest:true}]);
-      add(2,1,[{t:0,d:.5,rest:true},{t:.5,d:.5}]);               // offbeat eighth
-    }
-    if(cx>=3){
-      add(3,1,[{t:0,d:T,tup:3},{t:T,d:T,tup:3},{t:2*T,d:T,tup:3}]);
-      add(3,1,[{t:0,d:.25},{t:.25,d:.25},{t:.5,d:.25},{t:.75,d:.25}]);
-      add(3,1,[{t:0,d:.75},{t:.75,d:.25}]);                      // dotted-8th + 16th
-    }
-    add(2,2,[{t:0,d:2}]);                                        // half
-    if(cx<=2) add(1,2,[{t:0,d:2,rest:true}]);                    // half rest
-    if(S.sig === "3/4") add(1,3,[{t:0,d:3}]);                    // dotted half
-    else add(1,4,[{t:0,d:4}]);                                   // whole
-    return p;
+  // A "cell" = weighted building block that fills one beat group (or more).
+  // Cells are written as note values: 1 2 4 8 16 = whole…16th, "." dotted,
+  // "r" rest, "t" triplet eighth. Each row: [level introduced, weight, cell, opts]
+  // opts.sig limits a cell to one meter; opts.upTo retires it above that level.
+  const LEVELS = ["Quarters", "Rests", "Eighths", "Offbeats", "Sixteenths", "Syncopation"];
+  const SIMPLE_CELLS = [
+    [0,6,"4"], [0,3,"2"], [0,1,"1",{sig:"4/4"}], [0,1,"2.",{sig:"3/4"}],
+    [1,3,"4r"], [1,1,"2r",{upTo:3}],
+    [2,6,"8 8"],
+    [3,3,"8r 8"], [3,2,"8 8r"], [3,2,"4. 8"],
+    [4,3,"16 16 16 16"], [4,3,"8. 16"], [4,2,"8 16 16"], [4,2,"16 16 8"], [4,3,"t t t"],
+    [5,2,"16 8 16"], [5,2,"16 8."], [5,2,"16r 16 16 16"], [5,2,"8r 16 16"],
+    [5,2,"8 4 8"], [5,2,"t tr t"], [5,1,"tr t t"],
+  ];
+  const COMPOUND_CELLS = [            // 6/8: cells fill a dotted-quarter beat
+    [0,4,"4."], [0,1,"2."],
+    [1,4,"4 8"], [1,2,"4.r"],
+    [2,5,"8 8 8"],
+    [3,2,"8 4"], [3,2,"8r 8 8"], [3,1,"8 8 8r"], [3,1,"8 8r 8"],
+    [4,3,"16 16 8 8"], [4,2,"8 16 16 8"], [4,2,"8. 16 8"],
+    [5,2,"8 8 16 16"], [5,2,"4 16 16"], [5,2,"8r 16 16 8"], [5,1,"16 16 8 16 16"], [5,1,"16 16 16 16 16 16"],
+  ];
+  const DUR = {1:4, 2:2, 4:1, 8:.5, 16:.25};
+  function parseCell(spec){
+    let t=0;
+    const notes=spec.split(' ').map(tok=>{
+      const [,v,dot,rest]=tok.match(/^(t|\d+)(\.?)(r?)$/);
+      const n = v==='t' ? {d:1/3, tup:3} : {d:DUR[v]*(dot?1.5:1)};
+      n.t=t; if(rest) n.rest=true; t+=n.d;
+      return n;
+    });
+    return {len:Math.round(t*12)/12, notes};
+  }
+  function cellPool(lv){
+    return (S.sig==="6/8" ? COMPOUND_CELLS : SIMPLE_CELLS)
+      .filter(([from,,,o={}])=>from<=lv && !(o.upTo<lv) && (!o.sig || o.sig===S.sig))
+      .map(([,w,spec])=>({w, ...parseCell(spec)}));
   }
   function pick(pool){
     const tot=pool.reduce((a,c)=>a+c.w,0); let r=Math.random()*tot;
     for(const c of pool){ if((r-=c.w)<=0) return c; } return pool[0];
   }
-  function makeBar(len, cx){
-    const pool = cellPool(cx);
+  function makeBar(len, lv){
+    const pool = cellPool(lv);
     for(let tries=0; tries<40; tries++){
       const out=[]; let pos=0, ok=true;
       while(pos < len-1e-6){
@@ -264,9 +266,9 @@
     return a.every((n,i)=>n.t===b[i].t && n.d===b[i].d && n.rest===b[i].rest);
   }
   function regen(){
-    const len=M().barQ, A=makeBar(len,S.complexity);
-    let B=makeBar(len,S.complexity), guard=0;
-    while(barsEqual(A,B) && guard++<20){ B=makeBar(len,S.complexity); } // ensure B differs from A
+    const len=M().barQ, A=makeBar(len,S.level);
+    let B=makeBar(len,S.level), guard=0;
+    while(barsEqual(A,B) && guard++<20){ B=makeBar(len,S.level); } // ensure B differs from A
     const rows=[A,A,A,B];
     if(S.playing){ S.pending=rows; $('genBtn').textContent='NEXT BAR…'; }  // swapped in at the next bar line
     else { S.rows=rows; render(rows); }
@@ -344,7 +346,22 @@
           beams+=`<rect x="${k>0?sx[k]-9:sx[k]-1}" y="${TOP+7}" width="10" height="4"/>`;
         }
       });
-      if(ns[0].tup) beams+=`<text class="tup" x="${(sx[0]+sx.at(-1))/2}" y="${TOP-5}" text-anchor="middle">${ns[0].tup}</text>`;
+    }
+    // tuplets: number over the beam, or a bracket when a rest breaks the beam
+    for(let i=0; i<bar.length; ){
+      if(!bar[i].tup){ i++; continue; }
+      const beat=Math.floor(bar[i].t+1e-6); let j=i;
+      while(bar[j+1] && bar[j+1].tup && Math.floor(bar[j+1].t+1e-6)===beat) j++;
+      const grp=bar.slice(i,j+1);
+      if(grp.every((n,k)=>beamed.has(i+k))){
+        const mid=(hx(grp[0])+hx(grp.at(-1)))/2+RX-1;
+        beams+=`<text class="tup" x="${mid}" y="${TOP-5}" text-anchor="middle">${grp[0].tup}</text>`;
+      } else {
+        const x0=hx(grp[0])-RX, x1=hx(grp.at(-1))+RX, mid=(x0+x1)/2, y=TOP-8;
+        beams+=`<path d="M${x0} ${y+4} V${y} H${mid-6} M${mid+6} ${y} H${x1} V${y+4}" fill="none" stroke="currentColor" stroke-width="1.2"/>`
+             + `<text class="tup" x="${mid}" y="${y+4}" text-anchor="middle">${grp[0].tup}</text>`;
+      }
+      i=j+1;
     }
     return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">${s}<g fill="currentColor">${beams}</g></svg>`;
   }
@@ -500,14 +517,14 @@
   const KEY='rhythm.settings.v1';
   const TOGGLES=[['tgMet','met'],['tgNotes','notes'],['tgHap','hap'],['tgCount','countIn']];
   function save(){
-    try{ localStorage.setItem(KEY, JSON.stringify({bpm:S.bpm, sig:S.sig, complexity:S.complexity,
+    try{ localStorage.setItem(KEY, JSON.stringify({bpm:S.bpm, sig:S.sig, level:S.level,
       met:S.met, notes:S.notes, hap:S.hap, countIn:S.countIn})); }catch(e){}
   }
   function load(){
     let o; try{ o=JSON.parse(localStorage.getItem(KEY)); }catch(e){}
     if(!o || typeof o!=='object') return;
     if(SIGS[o.sig]) S.sig=o.sig;
-    if([1,2,3].includes(o.complexity)) S.complexity=o.complexity;
+    if(Number.isInteger(o.level) && LEVELS[o.level]) S.level=o.level;
     if(Number.isFinite(o.bpm)) S.bpm=o.bpm;
     for(const [,k] of TOGGLES) if(typeof o[k]==='boolean') S[k]=o[k];
   }
@@ -523,6 +540,9 @@
       const on=c.dataset[attr]===val; c.classList.toggle('sel',on); c.setAttribute('aria-pressed',on);
     });
   }
+  function setLevel(lv){
+    S.level=lv; selChip('lvChips','lv',String(lv)); $('lvName').textContent=LEVELS[lv];
+  }
   function syncToggle(id,key){ $(id).classList.toggle('on',S[key]); $(id).setAttribute('aria-pressed',S[key]); }
 
   $('bpm').addEventListener('input',e=>setBpm(+e.target.value));
@@ -535,10 +555,9 @@
     $('sig').textContent=S.sig; setLabel(null);
     save(); regen();
   });
-  $('cxChips').addEventListener('click',e=>{
+  $('lvChips').addEventListener('click',e=>{
     const b=e.target.closest('.chip'); if(!b) return;
-    S.complexity=+b.dataset.cx; selChip('cxChips','cx',b.dataset.cx);
-    save(); regen();
+    setLevel(+b.dataset.lv); save(); regen();
   });
 
   for(const [id,key] of TOGGLES){
@@ -561,7 +580,7 @@
   }
   $('tapBtn').addEventListener('click',tap);
 
-  // keyboard: Space play/stop, N new rhythm, T tap
+  // keyboard: Space play/stop, N new rhythm, T tap, 0–5 level
   document.addEventListener('keydown',e=>{
     if(e.ctrlKey||e.metaKey||e.altKey||e.repeat) return;
     if(e.code==='Space'){
@@ -571,6 +590,7 @@
     }
     else if(e.key==='n'||e.key==='N') regen();
     else if(e.key==='t'||e.key==='T') tap();
+    else if(/^[0-5]$/.test(e.key) && e.target.type!=='range'){ setLevel(+e.key); save(); regen(); }
   });
 
   if(SUPPORT_URL){ $('support').href=SUPPORT_URL; $('support').hidden=false; }
@@ -582,7 +602,7 @@
 
   // init
   load();
-  selChip('sigChips','sig',S.sig); selChip('cxChips','cx',String(S.complexity));
+  selChip('sigChips','sig',S.sig); setLevel(S.level);
   for(const [id,key] of TOGGLES) syncToggle(id,key);
   $('sig').textContent=S.sig; setLabel(null);
   setBpm(S.bpm); regen();
