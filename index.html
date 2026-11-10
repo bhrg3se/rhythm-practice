@@ -55,16 +55,21 @@
 
   /* grid */
   .stage{margin:14px 0}
-  .rowlabel{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.22em;color:var(--muted);text-transform:uppercase;padding:0 4px 6px}
+  .rowlabel{display:flex;justify-content:space-between;white-space:nowrap;font-size:10px;letter-spacing:.22em;color:var(--muted);text-transform:uppercase;padding:0 4px 6px}
   .bar{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:12px;
     height:78px;margin-bottom:8px;overflow:hidden;color:var(--ink)}
   .bar.variation{border-color:rgba(232,106,91,.45);color:var(--coral)}
   .bar.active{border-color:var(--line2);box-shadow:0 0 0 1px var(--line2) inset}
+  .bar{cursor:pointer}
   .bar svg{position:absolute;inset:0;width:100%;height:100%}
-  .bar .gl{stroke:var(--line);stroke-width:1}
-  .bar .gl.sub{stroke:rgba(236,231,218,0.05)}
-  .bar .rest{color:var(--muted)}
-  .bar .tup{font:italic 700 11px var(--sans);fill:currentColor}
+  .gl{stroke:var(--line);stroke-width:1}
+  .gl.sub{stroke:rgba(236,231,218,0.05)}
+  .rest{color:var(--muted)}
+  .tup{font:italic 700 11px var(--sans);fill:currentColor}
+  .selcell{position:absolute;top:3px;bottom:3px;border-radius:8px;background:rgba(199,154,61,.13);
+    box-shadow:inset 0 0 0 1.5px rgba(199,154,61,.75);pointer-events:none}
+  .linkbtn{background:none;border:0;padding:0;font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--brass);cursor:pointer}
+  .linkbtn[hidden]{display:none}
   .playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--brass);
     box-shadow:0 0 12px 1px rgba(199,154,61,.8);left:0;display:none;z-index:2}
   .bar.active .playhead{display:block}
@@ -107,6 +112,26 @@
   .support{display:block;width:max-content;margin:10px auto 0;color:var(--brass);font-size:12px;text-decoration:none;
     border:1px solid rgba(199,154,61,.4);border-radius:999px;padding:7px 14px}
   .support[hidden]{display:none}
+
+  /* editor sheet */
+  .sheet{position:fixed;left:0;right:0;bottom:0;max-width:560px;margin:0 auto;z-index:10;
+    background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line2);border-bottom:0;
+    border-radius:16px 16px 0 0;padding:12px 14px calc(env(safe-area-inset-bottom) + 12px);
+    box-shadow:0 -12px 40px rgba(0,0,0,.5);max-height:44vh;display:flex;flex-direction:column;gap:10px}
+  .sheet[hidden]{display:none}
+  .sheet-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .sheet-head .k{font-size:11px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase}
+  .sheet-nav{display:flex;gap:6px}
+  .small{padding:8px 12px;border-radius:9px;border:1px solid var(--line2);background:transparent;color:var(--ink);
+    font-size:13px;font-weight:600;cursor:pointer}
+  .small:disabled{opacity:.35;cursor:default}
+  .small.icon{font-size:18px;line-height:1;padding:6px 12px}
+  .small.done{background:var(--brass);border-color:var(--brass);color:#160b09}
+  .palette{display:flex;flex-wrap:wrap;gap:6px;overflow-y:auto;min-height:0}
+  .cell{flex:1 0 auto;display:grid;place-items:center;padding:4px 6px;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--ink);cursor:pointer}
+  .cell.sel{border-color:var(--brass);box-shadow:inset 0 0 0 1px var(--brass)}
+  .cell svg{height:46px;width:auto;display:block}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -127,8 +152,8 @@
     </button>
   </div>
 
-  <div class="stage">
-    <div class="rowlabel"><span>4-bar phrase</span><span style="color:var(--coral)">bar 4 · variation</span></div>
+  <div class="stage" id="stage">
+    <div class="rowlabel"><span>Tap to edit<button class="linkbtn" id="undoBtn" hidden>&nbsp;· Undo</button></span><span style="color:var(--coral)">bar 4 · variation</span></div>
     <div id="bars"></div>
     <div class="ruler" id="ruler"></div>
   </div>
@@ -175,6 +200,20 @@
   <div class="hint">Bars 1–3 repeat · bar 4 varies<br>Keys: Space play/stop · N new rhythm · 0–5 level<br>Add to Home Screen to run like an app, offline.</div>
   <a class="support" id="support" hidden target="_blank" rel="noopener">☕ Buy me a coffee</a>
 
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-head">
+      <span class="k" id="edTitle">Bars 1–3 · beat 1</span>
+      <div class="sheet-nav">
+        <button class="small icon" id="edPrev" aria-label="Previous beat">‹</button>
+        <button class="small icon" id="edNext" aria-label="Next beat">›</button>
+        <button class="small" id="edUndo" disabled>Undo</button>
+        <button class="small done" id="edDone">Done</button>
+      </div>
+    </div>
+    <div class="palette" id="palette"></div>
+    <button class="small" id="edCopy">Copy bar 4 here</button>
+  </div>
+
 <script>
 "use strict";
 (() => {
@@ -206,7 +245,8 @@
   // A "cell" = weighted building block that fills one beat group (or more).
   // Cells are written as note values: 1 2 4 8 16 = whole…16th, "." dotted,
   // "r" rest, "t" triplet eighth. Each row: [level introduced, weight, cell, opts]
-  // opts.sig limits a cell to one meter; opts.upTo retires it above that level.
+  // opts.sig limits a cell to one meter; opts.upTo retires it above that level;
+  // opts.edit cells are only offered in the editor, never generated.
   const LEVELS = ["Quarters", "Rests", "Eighths", "Offbeats", "Sixteenths", "Syncopation"];
   const SIMPLE_CELLS = [
     [0,6,"4"], [0,3,"2"], [0,1,"1",{sig:"4/4"}], [0,1,"2.",{sig:"3/4"}],
@@ -216,6 +256,7 @@
     [4,3,"16 16 16 16"], [4,3,"8. 16"], [4,2,"8 16 16"], [4,2,"16 16 8"], [4,3,"t t t"],
     [5,2,"16 8 16"], [5,2,"16 8."], [5,2,"16r 16 16 16"], [5,2,"8r 16 16"],
     [5,2,"8 4 8"], [5,2,"t tr t"], [5,1,"tr t t"],
+    [0,0,"1r",{sig:"4/4",edit:true}], [0,0,"2.r",{sig:"3/4",edit:true}],
   ];
   const COMPOUND_CELLS = [            // 6/8: cells fill a dotted-quarter beat
     [0,4,"4."], [0,1,"2."],
@@ -224,6 +265,7 @@
     [3,2,"8 4"], [3,2,"8r 8 8"], [3,1,"8 8 8r"], [3,1,"8 8r 8"],
     [4,3,"16 16 8 8"], [4,2,"8 16 16 8"], [4,2,"8. 16 8"],
     [5,2,"8 8 16 16"], [5,2,"4 16 16"], [5,2,"8r 16 16 8"], [5,1,"16 16 8 16 16"], [5,1,"16 16 16 16 16 16"],
+    [0,0,"2.r",{edit:true}],
   ];
   const DUR = {1:4, 2:2, 4:1, 8:.5, 16:.25};
   function parseCell(spec){
@@ -236,10 +278,22 @@
     });
     return {len:Math.round(t*12)/12, notes};
   }
+  const cellsFor = () => (S.sig==="6/8" ? COMPOUND_CELLS : SIMPLE_CELLS)
+    .filter(([,,,o={}])=>!o.sig || o.sig===S.sig);
+  const fillSpec = () => S.sig==="6/8" ? "4." : "4";      // plain beat, used to pad edits
   function cellPool(lv){
-    return (S.sig==="6/8" ? COMPOUND_CELLS : SIMPLE_CELLS)
-      .filter(([from,,,o={}])=>from<=lv && !(o.upTo<lv) && (!o.sig || o.sig===S.sig))
-      .map(([,w,spec])=>({w, ...parseCell(spec)}));
+    return cellsFor()
+      .filter(([from,,,o={}])=>from<=lv && !(o.upTo<lv) && !o.edit)
+      .map(([,w,spec])=>({w, spec, ...parseCell(spec)}));
+  }
+  // a cell's notes placed at `at`; each note remembers its cell (cs, cl, k) so the editor can swap it
+  function place(spec, at){
+    const {len,notes}=parseCell(spec);
+    return notes.map(n=>({...n, t:at+n.t, rest:!!n.rest, cs:at, cl:len, k:spec}));
+  }
+  function cellAt(bar, t){
+    const n=bar.find(n=>t>=n.cs-1e-6 && t<n.cs+n.cl-1e-6) || bar.at(-1);
+    return {cs:n.cs, cl:n.cl, k:n.k};
   }
   function pick(pool){
     const tot=pool.reduce((a,c)=>a+c.w,0); let r=Math.random()*tot;
@@ -253,13 +307,13 @@
         const opts=pool.filter(c=>c.len<=len-pos+1e-6);
         if(!opts.length){ok=false;break;}
         const c=pick(opts);
-        c.notes.forEach(n=>out.push({...n, t:pos+n.t, rest:!!n.rest}));
+        out.push(...place(c.spec,pos));
         pos+=c.len;
       }
       if(ok && out.some(n=>!n.rest)) return out;
     }
     const step=M().groupQ;
-    return Array.from({length:Math.round(len/step)},(_,i)=>({t:i*step,d:step,rest:false}));
+    return Array.from({length:Math.round(len/step)},(_,i)=>place(fillSpec(),i*step)).flat();
   }
   function barsEqual(a,b){
     if(a.length!==b.length) return false;
@@ -270,8 +324,10 @@
     let B=makeBar(len,S.level), guard=0;
     while(barsEqual(A,B) && guard++<20){ B=makeBar(len,S.level); } // ensure B differs from A
     const rows=[A,A,A,B];
+    pushHistory();
     if(S.playing){ S.pending=rows; $('genBtn').textContent='NEXT BAR…'; }  // swapped in at the next bar line
-    else { S.rows=rows; render(rows); }
+    else { S.rows=rows; saveRows(); render(rows); }
+    if(E) refreshEditor();
   }
 
   // ---------- SVG notation ----------
@@ -313,11 +369,11 @@
     return `<g class="rest" fill="currentColor">${s}</g>`;
   }
 
-  function barSvg(bar, W){
-    const m=M(), X=t=>t/m.barQ*W, hx=n=>X(n.t)+PADX+RX;
+  function barSvg(bar, W, len=M().barQ){
+    const m=M(), X=t=>t/len*W, hx=n=>X(n.t)+PADX+RX;
     let s='';
     // grid: a line per pulse, fainter inside a beat group (6/8 eighths)
-    for(let q=m.pulseQ; q<m.barQ-1e-6; q+=m.pulseQ){
+    for(let q=m.pulseQ; q<len-1e-6; q+=m.pulseQ){
       const sub=!near(q%m.groupQ,0) && !near(q%m.groupQ,m.groupQ);
       s+=`<line class="gl${sub?' sub':''}" x1="${X(q)}" y1="0" x2="${X(q)}" y2="${H}"/>`;
     }
@@ -372,18 +428,120 @@
 
   function render(rows){
     shown=rows;
-    const W=shownW=Math.max(200, barsEl.clientWidth-2);
-    barsEl.innerHTML=rows.map((bar,ri)=>
-      `<div class="bar${ri===3?' variation':''}">${barSvg(bar,W)}<div class="playhead"></div></div>`).join('');
+    const m=M(), W=shownW=Math.max(200, barsEl.clientWidth-2);
+    // editor selection is outlined on every bar sharing the edited rhythm
+    const sel=E && cellAt(rows[E.row],E.cs);
+    barsEl.innerHTML=rows.map((bar,ri)=>{
+      const hl = sel && bar===rows[E.row]
+        ? `<div class="selcell" style="left:${sel.cs/m.barQ*100}%;width:${sel.cl/m.barQ*100}%"></div>` : '';
+      return `<div class="bar${ri===3?' variation':''}">${barSvg(bar,W)}${hl}<div class="playhead"></div></div>`;
+    }).join('');
     barEls=[...barsEl.children];
     phEls=barEls.map(el=>el.querySelector('.playhead'));
     noteEls=barEls.map(el=>{ const a=[]; el.querySelectorAll('[data-ni]').forEach(g=>a[+g.dataset.ni]=g); return a; });
-    const m=M(), n=Math.round(m.barQ/m.pulseQ);
+    const n=Math.round(m.barQ/m.pulseQ);
     rulerEl.innerHTML=Array.from({length:n},(_,i)=>
       `<span${near((i*m.pulseQ)%m.groupQ,0)?'':' class="sub"'}>${i+1}</span>`).join('');
     if(!S.pending) $('genBtn').textContent='NEW RHYTHM';
   }
   new ResizeObserver(()=>{ if(shown && barsEl.clientWidth-2!==shownW) render(shown); }).observe(barsEl);
+
+  // ---------- editor ----------
+  // Tap a bar to select the cell under the finger, then pick a replacement from
+  // the palette. Replacing keeps the bar full: overlapped cells are dropped and
+  // any leftover is padded with plain beats. Bars 1–3 share one rhythm, so
+  // editing any of them edits all three.
+  let E=null;                                    // selected cell: {row, cs}
+  const sheet=$('sheet');
+
+  function openEditor(row, t){
+    E={row, cs:cellAt(S.rows[row],t).cs};
+    if(sheet.hidden){
+      sheet.hidden=false; document.body.style.paddingBottom=sheet.offsetHeight+'px';
+      $('stage').scrollIntoView({block:'start', behavior:'smooth'});
+    }
+    refreshEditor();
+  }
+  function closeEditor(){
+    E=null; sheet.hidden=true; document.body.style.paddingBottom='';
+    render(S.rows);
+  }
+  function refreshEditor(){
+    const m=M(), sel=cellAt(S.rows[E.row],E.cs); E.cs=sel.cs;
+    $('edTitle').textContent=`${E.row<3?'Bars 1–3':'Bar 4'} · beat ${Math.round(sel.cs/m.beatQ)+1}`;
+    $('edCopy').textContent = E.row<3 ? 'Copy bar 4 here' : 'Copy bars 1–3 here';
+    const seen=new Set();
+    $('palette').innerHTML=cellsFor().map(([,,spec])=>spec)
+      .filter(spec=>!seen.has(spec) && seen.add(spec))
+      .map(spec=>({spec, len:parseCell(spec).len}))
+      .filter(c=>c.len<=m.barQ-sel.cs+1e-6)
+      .sort((a,b)=>a.len-b.len)
+      .map(c=>`<button class="cell${c.spec===sel.k?' sel':''}" data-spec="${c.spec}" aria-label="${c.spec}">`
+             + `${barSvg(place(c.spec,0), Math.min(c.len,2)*72, c.len)}</button>`).join('');
+    render(S.rows);
+  }
+  function replaceCell(row, cs, spec){
+    const bar=S.rows[row], end=cs+parseCell(spec).len;
+    const keep=bar.filter(n=>n.cs+n.cl<=cs+1e-6 || n.cs>=end-1e-6);
+    const coverEnd=Math.max(end, ...bar.filter(n=>!keep.includes(n)).map(n=>n.cs+n.cl));
+    const out=[...keep, ...place(spec,cs)];
+    for(let t=end; t<coverEnd-1e-6; t+=M().groupQ) out.push(...place(fillSpec(),t));
+    setBar(row, out.sort((a,b)=>a.t-b.t));
+    return end;
+  }
+  function setBar(row, bar){
+    const rows=S.rows.slice();
+    if(row<3) rows[0]=rows[1]=rows[2]=bar; else rows[3]=bar;
+    pushHistory(); S.pending=null;               // an edit wins over a queued new rhythm
+    S.rows=rows; if(P) P.rows=rows;              // playback picks it up from the next pulse
+    saveRows(); render(rows);
+  }
+  function moveSel(dir){
+    const m=M(), bar=S.rows[E.row], cur=cellAt(bar,E.cs);
+    if(dir>0){
+      if(cur.cs+cur.cl < m.barQ-1e-6) E.cs=cur.cs+cur.cl;
+      else if(E.row<3){ E.row=3; E.cs=0; }
+    } else {
+      if(cur.cs>1e-6) E.cs=cellAt(bar,cur.cs-1e-3).cs;
+      else if(E.row===3){ E.row=0; E.cs=cellAt(S.rows[0],m.barQ-1e-3).cs; }
+    }
+    refreshEditor();
+  }
+
+  barsEl.addEventListener('click',e=>{
+    const el=e.target.closest('.bar'), row=barEls.indexOf(el); if(row<0) return;
+    const r=el.getBoundingClientRect();
+    openEditor(row, (e.clientX-r.left)/r.width*M().barQ);
+  });
+  $('palette').addEventListener('click',e=>{
+    const b=e.target.closest('.cell'); if(!b || !E) return;
+    const end=replaceCell(E.row, E.cs, b.dataset.spec);
+    if(end < M().barQ-1e-6) E.cs=end;            // move on to the next beat
+    refreshEditor();
+  });
+  $('edPrev').addEventListener('click',()=>moveSel(-1));
+  $('edNext').addEventListener('click',()=>moveSel(1));
+  $('edDone').addEventListener('click',closeEditor);
+  $('edCopy').addEventListener('click',()=>{
+    setBar(E.row, S.rows[E.row<3?3:0].map(n=>({...n})));
+    refreshEditor();
+  });
+
+  // undo covers edits, new rhythms and level changes (cleared on meter change)
+  let history=[];
+  function pushHistory(){
+    if(S.rows.length && history.at(-1)!==S.rows){ history.push(S.rows); if(history.length>50) history.shift(); }
+    updateUndo();
+  }
+  function undo(){
+    const rows=history.pop(); updateUndo(); if(!rows) return;
+    S.pending=null; S.rows=rows; if(P) P.rows=rows;
+    saveRows();
+    if(E) refreshEditor(); else render(rows);
+  }
+  function updateUndo(){ $('undoBtn').hidden = $('edUndo').disabled = !history.length; }
+  $('undoBtn').addEventListener('click',undo);
+  $('edUndo').addEventListener('click',undo);
 
   // ---------- audio ----------
   let ctx=null;
@@ -452,7 +610,7 @@
         beats.push({t, level:m.acc[i], count:i+1});
         P.count--; P.next+=dt; continue;
       }
-      if(P.pulse===0 && S.pending){ P.rows=S.rows=S.pending; S.pending=null; P.row=0; }
+      if(P.pulse===0 && S.pending){ P.rows=S.rows=S.pending; S.pending=null; P.row=0; saveRows(); }
       const q0=P.pulse*m.pulseQ, q1=q0+m.pulseQ, level=m.acc[P.pulse], q=spq();
       if(S.met) click(P.out, t, level);
       beats.push({t, level});
@@ -489,7 +647,8 @@
     // current pulse segment drives which bar is active and the playhead position
     while(segs.length && segs[0].t1<=now) segs.shift();
     const s = segs[0] && segs[0].t0<=now ? segs[0] : null;
-    if(s && s.rows!==shown) render(s.rows);        // a queued rhythm reaches the bar line
+    // a queued rhythm reaches the bar line (segments from before an edit are stale: skip them)
+    if(s && s.rows!==shown && s.rows===P.rows){ if(E) refreshEditor(); else render(s.rows); }
     barEls.forEach((el,i)=>el.classList.toggle('active', !!s && i===s.row));
     if(s) phEls[s.row].style.left = ((s.q0+(now-s.t0)/(s.t1-s.t0)*(s.q1-s.q0))/m.barQ*100)+'%';
     // beacon + count-in label follow the most recent click
@@ -528,6 +687,27 @@
     if(Number.isFinite(o.bpm)) S.bpm=o.bpm;
     for(const [,k] of TOGGLES) if(typeof o[k]==='boolean') S[k]=o[k];
   }
+  // the current phrase (bars 1–3 and bar 4) survives reloads, edits included
+  const ROWS_KEY='rhythm.rows.v1';
+  function saveRows(){
+    try{ localStorage.setItem(ROWS_KEY, JSON.stringify({sig:S.sig, a:S.rows[0], b:S.rows[3]})); }catch(e){}
+  }
+  function validBar(bar){
+    if(!Array.isArray(bar) || !bar.length) return false;
+    let pos=0;
+    for(const n of bar){
+      if(!n || !near(n.t,pos) || !(n.d>0) || !(n.cl>0) || !Number.isFinite(n.cs)
+         || typeof n.k!=='string' || (n.tup!==undefined && n.tup!==3)) return false;
+      pos+=n.d;
+    }
+    return near(pos, M().barQ);
+  }
+  function loadRows(){
+    let o; try{ o=JSON.parse(localStorage.getItem(ROWS_KEY)); }catch(e){}
+    if(!o || o.sig!==S.sig || !validBar(o.a) || !validBar(o.b)) return false;
+    S.rows=[o.a,o.a,o.a,o.b]; render(S.rows);
+    return true;
+  }
 
   // ---------- UI wiring ----------
   function setBpm(v){
@@ -551,9 +731,11 @@
   $('sigChips').addEventListener('click',e=>{
     const b=e.target.closest('.chip'); if(!b) return;
     if(S.playing) stopPlay();
+    if(E) closeEditor();
     S.sig=b.dataset.sig; selChip('sigChips','sig',S.sig);
     $('sig').textContent=S.sig; setLabel(null);
     save(); regen();
+    history=[]; updateUndo();                    // old-meter rhythms can't come back
   });
   $('lvChips').addEventListener('click',e=>{
     const b=e.target.closest('.chip'); if(!b) return;
@@ -580,9 +762,14 @@
   }
   $('tapBtn').addEventListener('click',tap);
 
-  // keyboard: Space play/stop, N new rhythm, T tap, 0–5 level
+  // keyboard: Space play/stop, N new rhythm, T tap, 0–5 level, U / Ctrl+Z undo,
+  // ←/→ move the editor selection, Esc closes the editor
   document.addEventListener('keydown',e=>{
+    if((e.ctrlKey||e.metaKey) && !e.shiftKey && e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); return; }
     if(e.ctrlKey||e.metaKey||e.altKey||e.repeat) return;
+    if(E && e.target.type!=='range' && (e.key==='ArrowLeft'||e.key==='ArrowRight')){
+      e.preventDefault(); moveSel(e.key==='ArrowRight'?1:-1); return;
+    }
     if(e.code==='Space'){
       e.preventDefault();
       if(document.activeElement instanceof HTMLButtonElement) document.activeElement.blur(); // no double toggle on keyup
@@ -591,6 +778,8 @@
     else if(e.key==='n'||e.key==='N') regen();
     else if(e.key==='t'||e.key==='T') tap();
     else if(/^[0-5]$/.test(e.key) && e.target.type!=='range'){ setLevel(+e.key); save(); regen(); }
+    else if(e.key==='u'||e.key==='U') undo();
+    else if(e.key==='Escape' && E) closeEditor();
   });
 
   if(SUPPORT_URL){ $('support').href=SUPPORT_URL; $('support').hidden=false; }
@@ -605,7 +794,9 @@
   selChip('sigChips','sig',S.sig); setLevel(S.level);
   for(const [id,key] of TOGGLES) syncToggle(id,key);
   $('sig').textContent=S.sig; setLabel(null);
-  setBpm(S.bpm); regen();
+  setBpm(S.bpm);
+  if(!loadRows()) regen();
+  updateUndo();
 })();
 </script>
 </body>

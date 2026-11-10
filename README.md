@@ -40,7 +40,15 @@ then open `http://localhost:8000` in Chrome on the phone.
 opens in its own window and works offline after the first visit. Same on iOS
 Safari via Share → *Add to Home Screen*.
 
+**Editing:** tap any beat in a bar, then pick a replacement from the palette.
+The selection moves on to the next beat, so you can build a bar left to right.
+Bars 1–3 share one rhythm (editing one edits all three); bar 4 is separate, and
+*Copy* duplicates one into the other as a starting point. Edits work while
+playing and are heard from the next click. The current phrase, edits included,
+is restored on reload.
+
 Keyboard: `Space` play/stop · `N` new rhythm · `T` tap tempo · `0`–`5` level ·
+`U` / `Ctrl+Z` undo · `←`/`→` move the edit selection · `Esc` close the editor ·
 arrows on the tempo slider.
 
 ## Deploy
@@ -106,6 +114,18 @@ To tune difficulty, edit the tables: add a row, or change a weight.
 
 Because cells never cross a beat group, the notation stays readable: no ties,
 and beams always land on beat boundaries.
+
+### Editor
+
+Every note also records its cell (`cs` start, `cl` length, `k` spec), so a bar
+can be treated as a sequence of cells. Tapping selects the cell under the finger.
+Picking a replacement at `cs` drops every cell overlapping the new one and pads
+any leftover with plain beats (`4`, or `4.` in 6/8), so a bar is always exactly
+full. The palette offers every cell for the meter that fits before the bar line,
+including editor-only ones (`opts.edit`, e.g. a whole-bar rest). Changing the
+rhythm (edit, New Rhythm, level change, copy) pushes the previous rows onto a
+50-step undo stack. The phrase is saved to `localStorage` (`rhythm.rows.v1`) and
+validated on load.
 
 ### Notation
 
