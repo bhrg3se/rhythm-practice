@@ -1,0 +1,15 @@
+{
+  "name": "Rhythm — practice trainer",
+  "short_name": "Rhythm",
+  "description": "Random rhythm generator and metronome for guitar and bass practice.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0F1A19",
+  "theme_color": "#0F1A19",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

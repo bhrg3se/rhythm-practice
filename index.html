@@ -2,10 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Random rhythm generator and metronome for guitar and bass practice. Works offline.">
 <meta name="theme-color" content="#0F1A19">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
 <title>Rhythm</title>
 <style>
   :root{
@@ -27,6 +31,7 @@
     max-width:560px; margin:0 auto;
     -webkit-font-smoothing:antialiased;
   }
+  button{touch-action:manipulation}
   header{display:flex;align-items:baseline;justify-content:space-between;padding:14px 2px 6px}
   .brand{font-weight:700;letter-spacing:.34em;font-size:13px;text-transform:uppercase;color:var(--ink)}
   .sig{font-family:var(--mono);color:var(--brass);font-size:14px;letter-spacing:.05em}
@@ -37,6 +42,8 @@
   .bpm{display:flex;flex-direction:column;line-height:.9;flex:1}
   .bpm .num{font-family:var(--mono);font-size:56px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--ink)}
   .bpm .lbl{font-size:11px;letter-spacing:.28em;color:var(--muted);text-transform:uppercase;margin-top:4px}
+  .bpm .lbl.count{color:var(--coral)}
+  .bpm .unit{width:11px;height:15px;vertical-align:-3px;fill:var(--ink)}
   .beacon{width:14px;height:14px;border-radius:50%;background:#26403c;margin-left:4px;transition:none}
   .beacon.on{background:var(--brass);box-shadow:0 0 16px 3px rgba(199,154,61,.7)}
   .beacon.on.acc{background:var(--coral);box-shadow:0 0 20px 4px rgba(232,106,91,.8)}
@@ -50,20 +57,22 @@
   .stage{margin:14px 0}
   .rowlabel{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.22em;color:var(--muted);text-transform:uppercase;padding:0 4px 6px}
   .bar{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:12px;
-    height:78px;margin-bottom:8px;overflow:hidden;display:flex;align-items:stretch}
-  .bar.variation{border-color:rgba(232,106,91,.45)}
+    height:78px;margin-bottom:8px;overflow:hidden;color:var(--ink)}
+  .bar.variation{border-color:rgba(232,106,91,.45);color:var(--coral)}
   .bar.active{border-color:var(--line2);box-shadow:0 0 0 1px var(--line2) inset}
-  .grid-line{position:absolute;top:0;bottom:0;width:1px;background:var(--line)}
-  .grid-line.down{background:var(--line2)}
+  .bar svg{position:absolute;inset:0;width:100%;height:100%}
+  .bar .gl{stroke:var(--line);stroke-width:1}
+  .bar .gl.sub{stroke:rgba(236,231,218,0.05)}
+  .bar .rest{color:var(--muted)}
+  .bar .tup{font:italic 700 11px var(--sans);fill:currentColor}
   .playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--brass);
-    box-shadow:0 0 12px 1px rgba(199,154,61,.8);left:0;display:none}
+    box-shadow:0 0 12px 1px rgba(199,154,61,.8);left:0;display:none;z-index:2}
   .bar.active .playhead{display:block}
-  .note{position:relative;display:grid;place-items:center;z-index:2}
-  .note svg{width:100%;height:100%;overflow:visible}
-  .nh{transition:transform .04s}
-  .note.hit .nh{transform:translateY(-3px) scale(1.14)}
+  .nh{transition:transform .04s;transform-box:fill-box;transform-origin:center}
+  .nh.hit{transform:translateY(-2px) scale(1.25)}
   .ruler{display:flex;padding:2px 0 0}
-  .ruler span{flex:1;text-align:center;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .ruler span{flex:1;padding-left:8px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .ruler span.sub{opacity:.45}
 
   /* controls */
   .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
@@ -71,7 +80,7 @@
   .ctl{margin:6px 0 14px}
   .ctl:last-child{margin-bottom:0}
   .ctl > .k{font-size:11px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;margin-bottom:9px;display:block}
-  input[type=range]{width:100%;-webkit-appearance:none;height:4px;border-radius:3px;background:#294744;margin:2px 0}
+  input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:4px;border-radius:3px;background:#294744;margin:2px 0}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;
     background:var(--ink);border:4px solid var(--panel);box-shadow:0 2px 6px rgba(0,0,0,.4);cursor:pointer}
   input[type=range]::-moz-range-thumb{width:22px;height:22px;border:4px solid var(--panel);border-radius:50%;background:var(--ink)}
@@ -79,8 +88,8 @@
   .chip{flex:1;min-width:56px;text-align:center;padding:11px 6px;border-radius:10px;border:1px solid var(--line);
     background:transparent;color:var(--muted);font-family:var(--sans);font-size:14px;cursor:pointer;font-weight:600}
   .chip.sel{background:var(--brass);color:#160b09;border-color:var(--brass)}
-  .toggles{display:flex;gap:8px}
-  .tg{flex:1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;
+  .toggles{display:flex;flex-wrap:wrap;gap:8px}
+  .tg{flex:1 1 150px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;
     border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font-size:13px;cursor:pointer;font-weight:600}
   .tg .dot{width:34px;height:20px;border-radius:12px;background:#294744;position:relative;flex:none}
   .tg .dot::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:.15s}
@@ -92,7 +101,11 @@
     color:var(--ink);font-size:14px;font-weight:700;letter-spacing:.04em;cursor:pointer}
   .btn:active{transform:scale(.98)}
   .btn.tap{font-family:var(--mono)}
+  .btn.gen{background:var(--coral);color:#160b09;border-color:var(--coral)}
   .hint{color:var(--muted);font-size:11px;text-align:center;margin:16px 0 2px;letter-spacing:.03em}
+  .support{display:block;width:max-content;margin:10px auto 0;color:var(--brass);font-size:12px;text-decoration:none;
+    border:1px solid rgba(199,154,61,.4);border-radius:999px;padding:7px 14px}
+  .support[hidden]{display:none}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -105,7 +118,7 @@
   <div class="transport">
     <div class="bpm">
       <span class="num" id="bpmNum">90</span>
-      <span class="lbl">BPM</span>
+      <span class="lbl" id="bpmLbl">BPM</span>
     </div>
     <div class="beacon" id="beacon"></div>
     <button class="play" id="playBtn" aria-label="Play">
@@ -122,7 +135,7 @@
   <div class="panel">
     <div class="ctl">
       <span class="k">Tempo · <span id="bpmLabel">90</span></span>
-      <input type="range" id="bpm" min="40" max="220" value="90">
+      <input type="range" id="bpm" min="40" max="220" value="90" aria-label="Tempo">
     </div>
     <div class="ctl">
       <span class="k">Time signature</span>
@@ -146,167 +159,229 @@
         <button class="tg on" id="tgMet"><span>Metronome</span><span class="dot"></span></button>
         <button class="tg on" id="tgNotes"><span>Notes</span><span class="dot"></span></button>
         <button class="tg" id="tgHap"><span>Haptics</span><span class="dot"></span></button>
+        <button class="tg" id="tgCount"><span>Count-in bar</span><span class="dot"></span></button>
       </div>
       <div class="row2">
         <button class="btn tap" id="tapBtn">TAP TEMPO</button>
-        <button class="btn" id="genBtn" style="background:var(--coral);color:#160b09;border-color:var(--coral)">NEW RHYTHM</button>
-      </div>
-      <div class="toggles" style="margin-top:10px">
-        <button class="tg" id="tgCount" style="flex:1"><span>Count-in bar</span><span class="dot"></span></button>
+        <button class="btn gen" id="genBtn">NEW RHYTHM</button>
       </div>
     </div>
   </div>
 
-  <div class="hint">Bars 1–3 repeat · bar 4 varies. Add to Home Screen to run like an app.</div>
+  <div class="hint">Bars 1–3 repeat · bar 4 varies · Space plays/stops, N for a new rhythm.<br>Add to Home Screen to run like an app, offline.</div>
+  <a class="support" id="support" hidden target="_blank" rel="noopener">☕ Buy me a coffee</a>
 
 <script>
 "use strict";
 (() => {
-  // ---------- state ----------
-  const S = {
-    bpm: 90, sig: "4/4", beats: 4, complexity: 2,
-    met: true, notes: true, hap: false, countIn: false,
-    rows: [], playing: false,
+  // Set to your Buy Me a Coffee / Ko-fi page to show the support link.
+  const SUPPORT_URL = "";
+
+  // ---------- meters ----------
+  // All positions and durations are in quarter notes.
+  // pulseQ: metronome click spacing · beatQ: what the BPM number counts
+  // groupQ: beaming / cell group · acc: click level per pulse (2 strong, 1 medium, 0 weak)
+  const SIGS = {
+    "4/4": {barQ:4, pulseQ:1,  beatQ:1,   groupQ:1,   acc:[2,0,0,0]},
+    "3/4": {barQ:3, pulseQ:1,  beatQ:1,   groupQ:1,   acc:[2,0,0]},
+    "6/8": {barQ:3, pulseQ:.5, beatQ:1.5, groupQ:1.5, acc:[2,0,0,1,0,0]},
   };
 
+  // ---------- state ----------
+  const S = {
+    bpm: 90, sig: "4/4", complexity: 2,
+    met: true, notes: true, hap: false, countIn: false,
+    rows: [], pending: null, playing: false,
+  };
+  const M = () => SIGS[S.sig];
+  const near = (a,b) => Math.abs(a-b) < 1e-6;
+  const $ = id => document.getElementById(id);
+
   // ---------- notation generator ----------
-  // A "note" = {t: startBeat, d: durBeat, rest: bool}
+  // A "note" = {t: start, d: duration, rest?: bool, tup?: 3}
+  // A "cell" = weighted building block that fills `len` quarters.
   function cellPool(cx){
-    // duration-1 beat cells; each returns an array of notes relative to beat start
-    const Q  = [{t:0,d:1}];
-    const QR = [{t:0,d:1,rest:true}];
-    const EE = [{t:0,d:.5},{t:.5,d:.5}];
-    const ER = [{t:0,d:.5},{t:.5,d:.5,rest:true}];
-    const T3 = [{t:0,d:1/3},{t:1/3,d:1/3},{t:2/3,d:1/3}];
-    const S16= [{t:0,d:.25},{t:.25,d:.25},{t:.5,d:.25},{t:.75,d:.25}];
-    const DOT= [{t:0,d:.75},{t:.75,d:.25}];             // dotted-8th + 16th
     const p = [];
-    const add=(w,len,notes)=>p.push({w,len,notes});
-    // len-1 cells
-    add(6,1,Q); add(3,1,QR);
-    if(cx>=2){ add(6,1,EE); add(2,1,ER); }
-    if(cx>=3){ add(3,1,T3); add(3,1,S16); add(3,1,DOT); }
-    // multi-beat sustains
-    add(2,2,[{t:0,d:2}]);                                // half
-    if(cx<=2) add(1,2,[{t:0,d:2,rest:true}]);            // half rest
-    add(1,4,[{t:0,d:4}]);                                // whole (only fits full 4/4-ish)
+    const add = (w,len,notes) => p.push({w,len,notes});
+    if(S.sig === "6/8"){
+      // compound meter: cells fill one dotted-quarter beat
+      add(4,1.5,[{t:0,d:1.5}]);                                  // dotted quarter
+      add(2,1.5,[{t:0,d:1.5,rest:true}]);
+      add(4,1.5,[{t:0,d:1},{t:1,d:.5}]);                         // quarter + eighth
+      if(cx>=2){
+        add(5,1.5,[{t:0,d:.5},{t:.5,d:.5},{t:1,d:.5}]);          // three eighths
+        add(2,1.5,[{t:0,d:.5},{t:.5,d:1}]);                      // eighth + quarter
+        add(2,1.5,[{t:0,d:.5,rest:true},{t:.5,d:.5},{t:1,d:.5}]);
+      }
+      if(cx>=3){
+        add(3,1.5,[{t:0,d:.25},{t:.25,d:.25},{t:.5,d:.5},{t:1,d:.5}]);
+        add(2,1.5,[{t:0,d:.5},{t:.5,d:.25},{t:.75,d:.25},{t:1,d:.5}]);
+        add(2,1.5,[{t:0,d:.75},{t:.75,d:.25},{t:1,d:.5}]);       // siciliano
+      }
+      add(1,3,[{t:0,d:3}]);                                      // dotted half
+      return p;
+    }
+    const T = 1/3;
+    add(6,1,[{t:0,d:1}]); add(3,1,[{t:0,d:1,rest:true}]);
+    if(cx>=2){
+      add(6,1,[{t:0,d:.5},{t:.5,d:.5}]);
+      add(2,1,[{t:0,d:.5},{t:.5,d:.5,rest:true}]);
+      add(2,1,[{t:0,d:.5,rest:true},{t:.5,d:.5}]);               // offbeat eighth
+    }
+    if(cx>=3){
+      add(3,1,[{t:0,d:T,tup:3},{t:T,d:T,tup:3},{t:2*T,d:T,tup:3}]);
+      add(3,1,[{t:0,d:.25},{t:.25,d:.25},{t:.5,d:.25},{t:.75,d:.25}]);
+      add(3,1,[{t:0,d:.75},{t:.75,d:.25}]);                      // dotted-8th + 16th
+    }
+    add(2,2,[{t:0,d:2}]);                                        // half
+    if(cx<=2) add(1,2,[{t:0,d:2,rest:true}]);                    // half rest
+    if(S.sig === "3/4") add(1,3,[{t:0,d:3}]);                    // dotted half
+    else add(1,4,[{t:0,d:4}]);                                   // whole
     return p;
   }
   function pick(pool){
     const tot=pool.reduce((a,c)=>a+c.w,0); let r=Math.random()*tot;
     for(const c of pool){ if((r-=c.w)<=0) return c; } return pool[0];
   }
-  function makeBar(beats, cx){
+  function makeBar(len, cx){
     const pool = cellPool(cx);
     for(let tries=0; tries<40; tries++){
       const out=[]; let pos=0, ok=true;
-      while(pos<beats){
-        const rem=beats-pos;
-        const opts=pool.filter(c=>c.len<=rem);
+      while(pos < len-1e-6){
+        const opts=pool.filter(c=>c.len<=len-pos+1e-6);
         if(!opts.length){ok=false;break;}
         const c=pick(opts);
-        c.notes.forEach(n=>out.push({t:pos+n.t,d:n.d,rest:!!n.rest}));
+        c.notes.forEach(n=>out.push({...n, t:pos+n.t, rest:!!n.rest}));
         pos+=c.len;
       }
       if(ok && out.some(n=>!n.rest)) return out;
     }
-    return Array.from({length:beats},(_,i)=>({t:i,d:1,rest:false}));
+    const step=M().groupQ;
+    return Array.from({length:Math.round(len/step)},(_,i)=>({t:i*step,d:step,rest:false}));
   }
   function barsEqual(a,b){
     if(a.length!==b.length) return false;
     return a.every((n,i)=>n.t===b[i].t && n.d===b[i].d && n.rest===b[i].rest);
   }
   function regen(){
-    const A=makeBar(S.beats,S.complexity);
-    let B=makeBar(S.beats,S.complexity), guard=0;
-    while(barsEqual(A,B) && guard++<20){ B=makeBar(S.beats,S.complexity); } // ensure B differs from A
-    S.rows=[A,A,A,B];
-    render();
+    const len=M().barQ, A=makeBar(len,S.complexity);
+    let B=makeBar(len,S.complexity), guard=0;
+    while(barsEqual(A,B) && guard++<20){ B=makeBar(len,S.complexity); } // ensure B differs from A
+    const rows=[A,A,A,B];
+    if(S.playing){ S.pending=rows; $('genBtn').textContent='NEXT BAR…'; }  // swapped in at the next bar line
+    else { S.rows=rows; render(rows); }
   }
 
-  // ---------- SVG glyph ----------
-  function glyph(d, rest, coral){
-    const col = coral ? "#E86A5B" : "#ECE7DA";
-    const stem = coral ? "#E86A5B" : "#ECE7DA";
-    if(rest){
-      const m = 'rgba(122,146,141,.9)';
-      if(d>=4) return `<rect x="14" y="26" width="16" height="6" fill="${m}"/><line x1="8" y1="26" x2="36" y2="26" stroke="${m}" stroke-width="1.5"/>`;
-      if(d>=2) return `<rect x="14" y="30" width="16" height="6" fill="${m}"/><line x1="8" y1="36" x2="36" y2="36" stroke="${m}" stroke-width="1.5"/>`;
-      if(d>=1) return `<path d="M20 20 l6 8 l-5 6 l6 8 q-8 -5 -3 -10 l-6 -8 z" fill="${m}"/>`;
-      // eighth-ish rest
-      return `<circle cx="18" cy="26" r="3" fill="${m}"/><path d="M20 24 q6 6 4 20" stroke="${m}" stroke-width="2" fill="none"/>`;
+  // ---------- SVG notation ----------
+  // One SVG per bar in pixel units, so beams and tuplet numbers can span notes.
+  // Note heads sit just right of their onset, so the playhead reaches a head as it sounds.
+  const H=76, HY=52, TOP=20, RX=7.5, RY=5.4, PADX=4;
+
+  function durInfo(n){
+    if(n.tup) return {base:n.d*n.tup/2, dot:false};    // triplet eighth = 1/3 → drawn as eighth
+    for(const b of [4,2,1,.5,.25]){
+      if(near(n.d,b)) return {base:b, dot:false};
+      if(near(n.d,b*1.5)) return {base:b, dot:true};
     }
-    // note: open head for whole/half, filled otherwise; stem up; flags for 8th/16th; dot for .75
-    const open = d>=2;
-    const cx=20, cy=44, rx=8.5, ry=6.2;
-    let head = open
-      ? `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" transform="rotate(-20 ${cx} ${cy})" fill="none" stroke="${col}" stroke-width="2.4"/>`
-      : `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" transform="rotate(-20 ${cx} ${cy})" fill="${col}"/>`;
-    let stemEl = (d>=4) ? "" : `<line x1="${cx+rx-1}" y1="${cy-2}" x2="${cx+rx-1}" y2="12" stroke="${stem}" stroke-width="2.2"/>`;
-    let flags="";
-    const fx=cx+rx-1;
-    if(Math.abs(d-0.5)<1e-6 || Math.abs(d-1/3)<1e-6){
-      flags=`<path d="M${fx} 12 q11 4 8 16" stroke="${stem}" stroke-width="2.2" fill="none"/>`;
-    } else if(Math.abs(d-0.25)<1e-6){
-      flags=`<path d="M${fx} 12 q11 4 8 15" stroke="${stem}" stroke-width="2.2" fill="none"/>
-             <path d="M${fx} 19 q11 4 8 15" stroke="${stem}" stroke-width="2.2" fill="none"/>`;
-    } else if(Math.abs(d-0.75)<1e-6){
-      flags=`<path d="M${fx} 12 q11 4 8 16" stroke="${stem}" stroke-width="2.2" fill="none"/>`;
+    return {base:1, dot:false};
+  }
+  const flagged = n => !n.rest && durInfo(n).base < .5+1e-6;
+  const is16 = n => near(durInfo(n).base,.25);
+  const flag = (x,y) => `<path d="M${x} ${y} q10 4 7 15" stroke="currentColor" stroke-width="2" fill="none"/>`;
+
+  function noteGlyph(n, x, beamed, ni){
+    const {base,dot}=durInfo(n), sx=x+RX-1;
+    const fill = base>=2 ? 'fill="none" stroke="currentColor" stroke-width="2.2"' : 'fill="currentColor"';
+    let s=`<g class="nh" data-ni="${ni}"><ellipse cx="${x}" cy="${HY}" rx="${RX}" ry="${RY}" transform="rotate(-20 ${x} ${HY})" ${fill}/></g>`;
+    if(base<4) s+=`<line x1="${sx}" y1="${HY-2}" x2="${sx}" y2="${TOP}" stroke="currentColor" stroke-width="2"/>`;
+    if(!beamed && base<.5+1e-6){ s+=flag(sx,TOP); if(is16(n)) s+=flag(sx,TOP+7); }
+    if(dot) s+=`<circle cx="${x+RX+5}" cy="${HY-3}" r="2" fill="currentColor"/>`;
+    return s;
+  }
+  function restGlyph(n, x){
+    const {base,dot}=durInfo(n); let s;
+    if(base>=4) s=`<line x1="${x-10}" y1="34" x2="${x+10}" y2="34" stroke="currentColor" stroke-width="1.5"/><rect x="${x-6}" y="34" width="12" height="5"/>`;
+    else if(base>=2) s=`<line x1="${x-10}" y1="40" x2="${x+10}" y2="40" stroke="currentColor" stroke-width="1.5"/><rect x="${x-6}" y="35" width="12" height="5"/>`;
+    else if(base>=1) s=`<path transform="translate(${x-22.5} 7)" d="M20 20 l6 8 l-5 6 l6 8 q-8 -5 -3 -10 l-6 -8 z"/>`;
+    else {
+      s=`<circle cx="${x-3}" cy="36" r="2.6"/><path d="M${x-4} 37 q5 2 8 -3 l-5 18" fill="none" stroke="currentColor" stroke-width="1.8"/>`;
+      if(base<.5) s+=`<circle cx="${x-6}" cy="43" r="2.6"/><path d="M${x-7} 44 q5 2 8 -3" fill="none" stroke="currentColor" stroke-width="1.8"/>`;
     }
-    let dot = (Math.abs(d-0.75)<1e-6) ? `<circle cx="${cx+rx+6}" cy="${cy}" r="2.1" fill="${col}"/>` : "";
-    return head+stemEl+flags+dot;
+    if(dot) s+=`<circle cx="${x+9}" cy="38" r="2"/>`;
+    return `<g class="rest" fill="currentColor">${s}</g>`;
+  }
+
+  function barSvg(bar, W){
+    const m=M(), X=t=>t/m.barQ*W, hx=n=>X(n.t)+PADX+RX;
+    let s='';
+    // grid: a line per pulse, fainter inside a beat group (6/8 eighths)
+    for(let q=m.pulseQ; q<m.barQ-1e-6; q+=m.pulseQ){
+      const sub=!near(q%m.groupQ,0) && !near(q%m.groupQ,m.groupQ);
+      s+=`<line class="gl${sub?' sub':''}" x1="${X(q)}" y1="0" x2="${X(q)}" y2="${H}"/>`;
+    }
+    // beam runs: consecutive flagged notes within one beat group, no rests between
+    const runs=[]; let run=null;
+    bar.forEach((n,ni)=>{
+      const g=Math.floor(n.t/m.groupQ+1e-6);
+      if(!flagged(n)){ run=null; return; }
+      if(run && run.g===g && run.last===ni-1){ run.ix.push(ni); run.last=ni; }
+      else { run={g, ix:[ni], last:ni}; runs.push(run); }
+    });
+    const beamed=new Set();
+    runs.forEach(r=>{ if(r.ix.length>1) r.ix.forEach(i=>beamed.add(i)); });
+
+    bar.forEach((n,ni)=>{ s += n.rest ? restGlyph(n,hx(n)) : noteGlyph(n,hx(n),beamed.has(ni),ni); });
+
+    let beams='';
+    for(const r of runs){
+      if(r.ix.length<2) continue;
+      const ns=r.ix.map(i=>bar[i]), sx=ns.map(n=>hx(n)+RX-1);
+      beams+=`<rect x="${sx[0]-1}" y="${TOP}" width="${sx.at(-1)-sx[0]+2}" height="4"/>`;
+      ns.forEach((n,k)=>{
+        if(!is16(n)) return;
+        if(ns[k+1] && is16(ns[k+1])) beams+=`<rect x="${sx[k]-1}" y="${TOP+7}" width="${sx[k+1]-sx[k]+2}" height="4"/>`;
+        else if(!(k>0 && is16(ns[k-1]))){   // lone 16th: stub toward the previous note, or right if first
+          beams+=`<rect x="${k>0?sx[k]-9:sx[k]-1}" y="${TOP+7}" width="10" height="4"/>`;
+        }
+      });
+      if(ns[0].tup) beams+=`<text class="tup" x="${(sx[0]+sx.at(-1))/2}" y="${TOP-5}" text-anchor="middle">${ns[0].tup}</text>`;
+    }
+    return `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">${s}<g fill="currentColor">${beams}</g></svg>`;
   }
 
   // ---------- render ----------
-  const barsEl = document.getElementById('bars');
-  const rulerEl = document.getElementById('ruler');
-  let noteEls = [[],[],[],[]]; // per row -> per note element
+  const barsEl=$('bars'), rulerEl=$('ruler');
+  let shown=null, shownW=0, barEls=[], phEls=[], noteEls=[];
 
-  function render(){
-    barsEl.innerHTML=""; noteEls=[[],[],[],[]];
-    S.rows.forEach((bar,ri)=>{
-      const div=document.createElement('div');
-      div.className='bar'+(ri===3?' variation':'');
-      // gridlines per beat
-      for(let b=0;b<S.beats;b++){
-        const gl=document.createElement('div');
-        gl.className='grid-line'+(b===0?' down':'');
-        gl.style.left=(b/S.beats*100)+'%';
-        div.appendChild(gl);
-      }
-      // notes
-      bar.forEach((n,ni)=>{
-        const cell=document.createElement('div');
-        cell.className='note'; if(n.rest) cell.dataset.rest='1';
-        cell.style.position='absolute';
-        cell.style.left=(n.t/S.beats*100)+'%';
-        cell.style.width=(n.d/S.beats*100)+'%';
-        cell.style.top='0'; cell.style.bottom='0';
-        cell.innerHTML=`<svg viewBox="0 0 40 60" preserveAspectRatio="xMidYMid meet" style="max-width:40px"><g class="nh">${glyph(n.d,n.rest,ri===3)}</g></svg>`;
-        div.appendChild(cell);
-        noteEls[ri][ni]=cell;
-      });
-      const ph=document.createElement('div'); ph.className='playhead'; ph.dataset.ph='1';
-      div.appendChild(ph);
-      barsEl.appendChild(div);
-    });
-    rulerEl.innerHTML="";
-    for(let b=0;b<S.beats;b++){ const s=document.createElement('span'); s.textContent=(b+1); rulerEl.appendChild(s); }
+  function render(rows){
+    shown=rows;
+    const W=shownW=Math.max(200, barsEl.clientWidth-2);
+    barsEl.innerHTML=rows.map((bar,ri)=>
+      `<div class="bar${ri===3?' variation':''}">${barSvg(bar,W)}<div class="playhead"></div></div>`).join('');
+    barEls=[...barsEl.children];
+    phEls=barEls.map(el=>el.querySelector('.playhead'));
+    noteEls=barEls.map(el=>{ const a=[]; el.querySelectorAll('[data-ni]').forEach(g=>a[+g.dataset.ni]=g); return a; });
+    const m=M(), n=Math.round(m.barQ/m.pulseQ);
+    rulerEl.innerHTML=Array.from({length:n},(_,i)=>
+      `<span${near((i*m.pulseQ)%m.groupQ,0)?'':' class="sub"'}>${i+1}</span>`).join('');
+    if(!S.pending) $('genBtn').textContent='NEW RHYTHM';
   }
+  new ResizeObserver(()=>{ if(shown && barsEl.clientWidth-2!==shownW) render(shown); }).observe(barsEl);
 
   // ---------- audio ----------
   let ctx=null;
   function ac(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)(); return ctx; }
-  function click(time, accent){
-    const c=ac();
+  const CLICK=[[900,.3],[1200,.4],[1500,.5]];   // level -> [Hz, peak gain]
+  function click(out, time, level){
+    const c=ac(), [f,v]=CLICK[level];
     const o=c.createOscillator(), g=c.createGain();
-    o.frequency.value=accent?1500:900;
+    o.frequency.value=f;
     g.gain.setValueAtTime(0.0001,time);
-    g.gain.exponentialRampToValueAtTime(accent?0.5:0.32,time+0.001);
+    g.gain.exponentialRampToValueAtTime(v,time+0.001);
     g.gain.exponentialRampToValueAtTime(0.0001,time+0.05);
-    o.connect(g).connect(c.destination); o.start(time); o.stop(time+0.06);
+    o.connect(g).connect(out); o.start(time); o.stop(time+0.06);
   }
-  function pluck(time){
+  function pluck(out, time){
     const c=ac();
     const o=c.createOscillator(), g=c.createGain();
     o.type='triangle'; o.frequency.setValueAtTime(220,time);
@@ -314,148 +389,203 @@
     g.gain.setValueAtTime(0.0001,time);
     g.gain.exponentialRampToValueAtTime(0.42,time+0.004);
     g.gain.exponentialRampToValueAtTime(0.0001,time+0.18);
-    o.connect(g).connect(c.destination); o.start(time); o.stop(time+0.2);
+    o.connect(g).connect(out); o.start(time); o.stop(time+0.2);
   }
 
   // ---------- scheduler ----------
-  let nextBeatTime=0, phase='play', pointer={row:0,beat:0};
-  let barQueue=[];   // {row, start, dur}
-  let hitQueue=[];   // {row, ni, time, done}
-  let timerId=null;
-  const LOOK=0.1, TICK=25;
+  // Schedules one metronome pulse at a time, LOOK seconds ahead of the audio clock.
+  // Each pulse records a segment (bar position ↔ audio time) that the animation
+  // frame interpolates, so tempo changes take effect at the next pulse for both
+  // sound and playhead. Everything plays through a per-session gain node that is
+  // disconnected on stop, silencing already-scheduled sounds.
+  const LOOK=0.15, TICK=25;
+  let P=null, timerId=null;
+  let segs=[], beats=[], hits=[];
 
-  function spb(){ return 60/S.bpm; }              // seconds per pulse
+  const spq = () => 60/S.bpm/M().beatQ;          // seconds per quarter note
+
   function startPlay(){
-    const c=ac(); if(c.state==='suspended') c.resume();
-    S.playing=true; document.getElementById('playIcon').innerHTML='<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>';
-    nextBeatTime=c.currentTime+0.1;
-    pointer={row:0,beat:0}; barQueue=[]; hitQueue=[];
-    phase = S.countIn ? 'count' : 'play';
-    S.countLeft = S.beats;
-    timerId=setInterval(scheduler,TICK);
-    requestAnimationFrame(raf);
+    const c=ac(); if(c.state!=='running') c.resume();
+    const m=M(), out=c.createGain(); out.connect(c.destination);
+    P={out, next:c.currentTime+0.1, row:0, pulse:0, rows:S.rows,
+       count:S.countIn ? Math.round(m.barQ/m.pulseQ) : 0};
+    segs=[]; beats=[]; hits=[];
+    S.playing=true; setPlayIcon(true);
+    timerId=setInterval(scheduler,TICK); scheduler();
+    lockScreen();
+    const sess=P; requestAnimationFrame(function frame(){ if(P===sess){ draw(); requestAnimationFrame(frame); } });
   }
   function stopPlay(){
-    S.playing=false; clearInterval(timerId); timerId=null;
-    document.getElementById('playIcon').innerHTML='<path d="M7 5l12 7-12 7z"/>';
-    document.querySelectorAll('.bar').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.note.hit').forEach(n=>n.classList.remove('hit'));
-    setBeacon(false,false);
+    clearInterval(timerId); timerId=null;
+    if(P){ P.out.disconnect(); P=null; }
+    S.playing=false; setPlayIcon(false); unlockScreen();
+    if(S.pending){ S.rows=S.pending; S.pending=null; }
+    render(S.rows);                                 // also clears active/hit state
+    setBeacon(false,false); setLabel(null);
   }
   function scheduler(){
-    const c=ac();
-    while(nextBeatTime < c.currentTime + LOOK){
-      if(phase==='count'){
-        if(S.met) click(nextBeatTime, (S.countLeft===S.beats));
-        S.countLeft--;
-        nextBeatTime += spb();
-        if(S.countLeft<=0){ phase='play'; pointer={row:0,beat:0}; }
-        continue;
+    const c=ac(), m=M(), n=Math.round(m.barQ/m.pulseQ);
+    // after the tab was throttled/suspended, skip ahead instead of firing a backlog
+    if(P.next < c.currentTime) P.next = c.currentTime + 0.05;
+    while(P.next < c.currentTime + LOOK){
+      const t=P.next, dt=m.pulseQ*spq();
+      if(P.count>0){
+        const i=n-P.count;
+        click(P.out, t, m.acc[i]);
+        beats.push({t, level:m.acc[i], count:i+1});
+        P.count--; P.next+=dt; continue;
       }
-      const {row,beat}=pointer;
-      // metronome each pulse
-      if(S.met) click(nextBeatTime, beat===0);
-      // at downbeat: schedule this bar's note onsets + queue bar for playhead
-      if(beat===0){
-        const start=nextBeatTime;
-        barQueue.push({row, start, dur:S.beats*spb()});
-        S.rows[row].forEach((n,ni)=>{
-          if(n.rest) return;
-          const t=start + n.t*spb();
-          if(S.notes) pluck(t);
-          hitQueue.push({row, ni, time:t, done:false});
-        });
-      }
-      // advance
-      nextBeatTime += spb();
-      pointer.beat++;
-      if(pointer.beat>=S.beats){ pointer.beat=0; pointer.row=(pointer.row+1)%4; }
+      if(P.pulse===0 && S.pending){ P.rows=S.rows=S.pending; S.pending=null; P.row=0; }
+      const q0=P.pulse*m.pulseQ, q1=q0+m.pulseQ, level=m.acc[P.pulse], q=spq();
+      if(S.met) click(P.out, t, level);
+      beats.push({t, level});
+      segs.push({rows:P.rows, row:P.row, q0, q1, t0:t, t1:t+dt});
+      P.rows[P.row].forEach((nt,ni)=>{
+        if(nt.rest || nt.t<q0-1e-6 || nt.t>=q1-1e-6) return;
+        const tt=t+(nt.t-q0)*q;
+        if(S.notes) pluck(P.out, tt);
+        hits.push({rows:P.rows, row:P.row, ni, t:tt});
+      });
+      P.next+=dt;
+      if(++P.pulse>=n){ P.pulse=0; P.row=(P.row+1)%4; }
     }
   }
 
-  const beacon=document.getElementById('beacon');
+  const beacon=$('beacon');
   function setBeacon(on,acc){ beacon.classList.toggle('on',on); beacon.classList.toggle('acc',on&&acc); }
+  function setPlayIcon(playing){
+    $('playIcon').innerHTML = playing
+      ? '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>'
+      : '<path d="M7 5l12 7-12 7z"/>';
+    $('playBtn').setAttribute('aria-label', playing?'Stop':'Play');
+  }
+  // dotted quarter as a tiny SVG: the ♩ glyph renders unevenly across fallback fonts
+  const DOTTED_Q='<svg class="unit" viewBox="0 0 16 22" aria-label="dotted quarter"><ellipse cx="5.5" cy="17" rx="4.6" ry="3.4" transform="rotate(-20 5.5 17)"/><rect x="8.6" y="2" width="1.6" height="15"/><circle cx="13.5" cy="17" r="1.6"/></svg>';
+  function setLabel(count){
+    const el=$('bpmLbl');
+    el.innerHTML = count ? `Count · ${count}` : (S.sig==='6/8' ? `BPM · ${DOTTED_Q}` : 'BPM');
+    el.classList.toggle('count', !!count);
+  }
 
-  function raf(){
-    if(!S.playing) return;
-    const now=ac().currentTime;
-    // prune old bars
-    barQueue=barQueue.filter(b=>now < b.start+b.dur+0.05);
-    // active bar (visual)
-    let active=null;
-    for(const b of barQueue){ if(now>=b.start && now<b.start+b.dur){ active=b; break; } }
-    const barEls=document.querySelectorAll('.bar');
-    barEls.forEach((el,i)=>{
-      const on = active && i===active.row;
-      el.classList.toggle('active',!!on);
-      const ph=el.querySelector('[data-ph]');
-      if(on){ ph.style.left=((now-active.start)/active.dur*100)+'%'; }
-    });
-    // beacon pulse on pulse boundaries of active bar
-    if(active){
-      const frac=(now-active.start)/spb();
-      const inBeat=frac-Math.floor(frac);
-      const bi=Math.floor(frac);
-      setBeacon(inBeat<0.12, bi===0);
-    }
+  function draw(){
+    const now=ac().currentTime, m=M();
+    // current pulse segment drives which bar is active and the playhead position
+    while(segs.length && segs[0].t1<=now) segs.shift();
+    const s = segs[0] && segs[0].t0<=now ? segs[0] : null;
+    if(s && s.rows!==shown) render(s.rows);        // a queued rhythm reaches the bar line
+    barEls.forEach((el,i)=>el.classList.toggle('active', !!s && i===s.row));
+    if(s) phEls[s.row].style.left = ((s.q0+(now-s.t0)/(s.t1-s.t0)*(s.q1-s.q0))/m.barQ*100)+'%';
+    // beacon + count-in label follow the most recent click
+    while(beats.length>1 && beats[1].t<=now) beats.shift();
+    const b = beats[0] && beats[0].t<=now ? beats[0] : null;
+    setBeacon(!!b && now-b.t<0.08, !!b && b.level===2);
+    const count = b && b.count || null;
+    if(count!==draw.count){ draw.count=count; setLabel(count); }
     // note hits
-    for(const h of hitQueue){
-      if(!h.done && now>=h.time){
-        h.done=true;
-        const el=noteEls[h.row] && noteEls[h.row][h.ni];
-        if(el){ el.classList.add('hit'); setTimeout(()=>el.classList.remove('hit'),120); }
-        if(S.hap && navigator.vibrate) navigator.vibrate(18);
-      }
+    while(hits.length && hits[0].t<=now){
+      const h=hits.shift();
+      const el=h.rows===shown && noteEls[h.row][h.ni];
+      if(el){ el.classList.add('hit'); setTimeout(()=>el.classList.remove('hit'),120); }
+      if(S.hap && navigator.vibrate) navigator.vibrate(18);
     }
-    hitQueue=hitQueue.filter(h=>!h.done || now < h.time+0.3);
-    requestAnimationFrame(raf);
+  }
+
+  // keep the screen on while playing; Android throttles timers once it sleeps
+  let wake=null;
+  async function lockScreen(){ try{ wake=await navigator.wakeLock?.request('screen'); }catch(e){} }
+  function unlockScreen(){ wake?.release().catch(()=>{}); wake=null; }
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && S.playing) lockScreen(); });
+
+  // ---------- settings ----------
+  const KEY='rhythm.settings.v1';
+  const TOGGLES=[['tgMet','met'],['tgNotes','notes'],['tgHap','hap'],['tgCount','countIn']];
+  function save(){
+    try{ localStorage.setItem(KEY, JSON.stringify({bpm:S.bpm, sig:S.sig, complexity:S.complexity,
+      met:S.met, notes:S.notes, hap:S.hap, countIn:S.countIn})); }catch(e){}
+  }
+  function load(){
+    let o; try{ o=JSON.parse(localStorage.getItem(KEY)); }catch(e){}
+    if(!o || typeof o!=='object') return;
+    if(SIGS[o.sig]) S.sig=o.sig;
+    if([1,2,3].includes(o.complexity)) S.complexity=o.complexity;
+    if(Number.isFinite(o.bpm)) S.bpm=o.bpm;
+    for(const [,k] of TOGGLES) if(typeof o[k]==='boolean') S[k]=o[k];
   }
 
   // ---------- UI wiring ----------
-  const $=id=>document.getElementById(id);
   function setBpm(v){
     S.bpm=Math.max(40,Math.min(220,Math.round(v)));
     $('bpm').value=S.bpm; $('bpmNum').textContent=S.bpm; $('bpmLabel').textContent=S.bpm;
+    save();
   }
-  $('bpm').addEventListener('input',e=>setBpm(+e.target.value));
+  function selChip(group, attr, val){
+    document.querySelectorAll(`#${group} .chip`).forEach(c=>{
+      const on=c.dataset[attr]===val; c.classList.toggle('sel',on); c.setAttribute('aria-pressed',on);
+    });
+  }
+  function syncToggle(id,key){ $(id).classList.toggle('on',S[key]); $(id).setAttribute('aria-pressed',S[key]); }
 
+  $('bpm').addEventListener('input',e=>setBpm(+e.target.value));
   $('playBtn').addEventListener('click',()=> S.playing?stopPlay():startPlay());
 
   $('sigChips').addEventListener('click',e=>{
     const b=e.target.closest('.chip'); if(!b) return;
-    document.querySelectorAll('#sigChips .chip').forEach(c=>c.classList.remove('sel'));
-    b.classList.add('sel'); S.sig=b.dataset.sig;
-    S.beats = S.sig==='3/4'?3 : S.sig==='6/8'?6 : 4;
-    $('sig').textContent=S.sig;
     if(S.playing) stopPlay();
-    regen();
+    S.sig=b.dataset.sig; selChip('sigChips','sig',S.sig);
+    $('sig').textContent=S.sig; setLabel(null);
+    save(); regen();
   });
   $('cxChips').addEventListener('click',e=>{
     const b=e.target.closest('.chip'); if(!b) return;
-    document.querySelectorAll('#cxChips .chip').forEach(c=>c.classList.remove('sel'));
-    b.classList.add('sel'); S.complexity=+b.dataset.cx; regen();
+    S.complexity=+b.dataset.cx; selChip('cxChips','cx',b.dataset.cx);
+    save(); regen();
   });
 
-  function toggle(id,key){
-    $(id).addEventListener('click',()=>{ S[key]=!S[key]; $(id).classList.toggle('on',S[key]);
-      if(key==='hap'&&S[key]&&navigator.vibrate) navigator.vibrate(18); });
+  for(const [id,key] of TOGGLES){
+    $(id).addEventListener('click',()=>{
+      S[key]=!S[key]; syncToggle(id,key); save();
+      if(key==='hap' && S[key] && navigator.vibrate) navigator.vibrate(18);
+    });
   }
-  toggle('tgMet','met'); toggle('tgNotes','notes'); toggle('tgHap','hap'); toggle('tgCount','countIn');
 
   $('genBtn').addEventListener('click',regen);
 
   // tap tempo
   let taps=[];
-  $('tapBtn').addEventListener('click',()=>{
+  function tap(){
     const t=performance.now(); taps.push(t); taps=taps.filter(x=>t-x<2500);
     if(taps.length>=2){
       let d=0; for(let i=1;i<taps.length;i++) d+=taps[i]-taps[i-1];
       d/=(taps.length-1); setBpm(60000/d);
     }
+  }
+  $('tapBtn').addEventListener('click',tap);
+
+  // keyboard: Space play/stop, N new rhythm, T tap
+  document.addEventListener('keydown',e=>{
+    if(e.ctrlKey||e.metaKey||e.altKey||e.repeat) return;
+    if(e.code==='Space'){
+      e.preventDefault();
+      if(document.activeElement instanceof HTMLButtonElement) document.activeElement.blur(); // no double toggle on keyup
+      S.playing?stopPlay():startPlay();
+    }
+    else if(e.key==='n'||e.key==='N') regen();
+    else if(e.key==='t'||e.key==='T') tap();
   });
 
+  if(SUPPORT_URL){ $('support').href=SUPPORT_URL; $('support').hidden=false; }
+
+  // offline support when served over http(s); opening the file directly still works
+  if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+
   // init
-  setBpm(90); regen();
+  load();
+  selChip('sigChips','sig',S.sig); selChip('cxChips','cx',String(S.complexity));
+  for(const [id,key] of TOGGLES) syncToggle(id,key);
+  $('sig').textContent=S.sig; setLabel(null);
+  setBpm(S.bpm); regen();
 })();
 </script>
 </body>
