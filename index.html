@@ -132,6 +132,32 @@
     background:var(--panel2);color:var(--ink);cursor:pointer}
   .cell.sel{border-color:var(--brass);box-shadow:inset 0 0 0 1px var(--brass)}
   .cell svg{height:46px;width:auto;display:block}
+  /* instrument + note sequence */
+  .pl{font:600 9px var(--mono);fill:var(--muted)}
+  .seq{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .tok{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid var(--brass);
+    background:rgba(199,154,61,.12);color:var(--ink);font:600 13px var(--mono);cursor:pointer}
+  .tok .x{color:var(--muted);font-size:14px;line-height:1}
+  .tok.hit{background:var(--brass);color:#160b09}
+  .tok.hit .x{color:#160b09}
+  .kb{position:relative;display:flex;gap:2px;height:66px}
+  .kw{flex:1;border-radius:0 0 7px 7px;border:1px solid var(--line2);background:#d9d3c4;color:#3b3b36;
+    font:600 10px var(--mono);display:flex;align-items:flex-end;justify-content:center;padding:0 0 5px;cursor:pointer}
+  .kbk{position:absolute;top:0;width:9%;height:60%;transform:translateX(-50%);border-radius:0 0 5px 5px;
+    background:#1d2a28;border:1px solid var(--line2);z-index:1;cursor:pointer;padding:0}
+  .kw.on{background:var(--brass);border-color:var(--brass)}
+  .kbk.on{background:#8a6a26;border-color:var(--brass)}
+  .kb button:disabled{opacity:.3;cursor:default}
+  .pads{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .pad{padding:12px 6px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--ink);
+    font:600 13px var(--sans);cursor:pointer}
+  .pad.on{border-color:var(--brass);box-shadow:inset 0 0 0 1px var(--brass)}
+  .seqopts{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;flex-wrap:wrap}
+  .oct{display:flex;align-items:center;gap:6px;font:600 12px var(--mono);color:var(--muted)}
+  .oct[hidden]{display:none}
+  .chips.mode{flex:0 1 auto;margin-left:auto}
+  .chips.mode .chip{flex:none;padding:8px 12px;font-size:13px;min-width:0}
+  .subhint{color:var(--muted);font-size:11px;margin-top:8px}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -181,6 +207,32 @@
         <button class="chip" data-lv="4">4</button>
         <button class="chip" data-lv="5">5</button>
       </div>
+    </div>
+    <div class="ctl">
+      <span class="k">Instrument</span>
+      <div class="chips" id="instChips">
+        <button class="chip" data-inst="piano">Piano</button>
+        <button class="chip" data-inst="guitar">Guitar</button>
+        <button class="chip" data-inst="bass">Bass</button>
+        <button class="chip" data-inst="drums">Drums</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <span class="k">Notes</span>
+      <div class="seq" id="seq"></div>
+      <div id="keys"></div>
+      <div class="seqopts">
+        <div class="oct" id="octCtl">
+          <button class="small icon" id="octDown" aria-label="Octave down">‹</button>
+          <span id="octLbl">Octave 3</span>
+          <button class="small icon" id="octUp" aria-label="Octave up">›</button>
+        </div>
+        <div class="chips mode" id="modeChips">
+          <button class="chip" data-mode="turn">In turn</button>
+          <button class="chip" data-mode="chord">Together</button>
+        </div>
+      </div>
+      <div class="subhint" id="seqHint">Tap keys to add notes · tap a note above to remove it</div>
     </div>
     <div class="ctl" style="margin-bottom:0">
       <span class="k">Sound</span>
@@ -234,6 +286,7 @@
   const S = {
     bpm: 90, sig: "4/4", level: 2,
     met: true, notes: true, hap: false, countIn: false,
+    inst: "guitar", seqs: {}, chord: false,       // seqs: notes per instrument, played in turn or together
     rows: [], pending: null, playing: false,
   };
   const M = () => SIGS[S.sig];
@@ -369,7 +422,8 @@
     return `<g class="rest" fill="currentColor">${s}</g>`;
   }
 
-  function barSvg(bar, W, len=M().barQ){
+  // labels: optional text under each note head (which sequence note it plays)
+  function barSvg(bar, W, len=M().barQ, labels=null){
     const m=M(), X=t=>t/len*W, hx=n=>X(n.t)+PADX+RX;
     let s='';
     // grid: a line per pulse, fainter inside a beat group (6/8 eighths)
@@ -389,6 +443,7 @@
     runs.forEach(r=>{ if(r.ix.length>1) r.ix.forEach(i=>beamed.add(i)); });
 
     bar.forEach((n,ni)=>{ s += n.rest ? restGlyph(n,hx(n)) : noteGlyph(n,hx(n),beamed.has(ni),ni); });
+    if(labels) bar.forEach((n,ni)=>{ if(labels[ni]) s+=`<text class="pl" x="${hx(n)}" y="71" text-anchor="middle">${labels[ni]}</text>`; });
 
     let beams='';
     for(const r of runs){
@@ -431,10 +486,13 @@
     const m=M(), W=shownW=Math.max(200, barsEl.clientWidth-2);
     // editor selection is outlined on every bar sharing the edited rhythm
     const sel=E && cellAt(rows[E.row],E.cs);
+    // with several notes played in turn, label each head with the note it plays
+    const seq=S.seqs[S.inst], lab=!S.chord && seq.length>1;
     barsEl.innerHTML=rows.map((bar,ri)=>{
+      const labels=lab && bar.map((n,ni)=>!n.rest && keyShort(S.inst, seq[seqIndex(rows,ri,ni)%seq.length]));
       const hl = sel && bar===rows[E.row]
         ? `<div class="selcell" style="left:${sel.cs/m.barQ*100}%;width:${sel.cl/m.barQ*100}%"></div>` : '';
-      return `<div class="bar${ri===3?' variation':''}">${barSvg(bar,W)}${hl}<div class="playhead"></div></div>`;
+      return `<div class="bar${ri===3?' variation':''}">${barSvg(bar,W,m.barQ,labels)}${hl}<div class="playhead"></div></div>`;
     }).join('');
     barEls=[...barsEl.children];
     phEls=barEls.map(el=>el.querySelector('.playhead'));
@@ -556,15 +614,129 @@
     g.gain.exponentialRampToValueAtTime(0.0001,time+0.05);
     o.connect(g).connect(out); o.start(time); o.stop(time+0.06);
   }
-  function pluck(out, time){
-    const c=ac();
-    const o=c.createOscillator(), g=c.createGain();
-    o.type='triangle'; o.frequency.setValueAtTime(220,time);
-    o.frequency.exponentialRampToValueAtTime(180,time+0.12);
-    g.gain.setValueAtTime(0.0001,time);
-    g.gain.exponentialRampToValueAtTime(0.42,time+0.004);
-    g.gain.exponentialRampToValueAtTime(0.0001,time+0.18);
-    o.connect(g).connect(out); o.start(time); o.stop(time+0.2);
+
+  // ---------- instruments ----------
+  // Each sound is synthesised once into an AudioBuffer and cached: Karplus–Strong
+  // strings for guitar and bass, additive partials for piano, noise/sine recipes
+  // for drums. Pitched notes are damped at the end of their notated length.
+  const NAMES=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+  const noteName = m => NAMES[m%12]+(Math.floor(m/12)-1);
+  const hz = m => 440*2**((m-69)/12);
+  const INSTS={
+    piano: {lo:21, hi:108, def:[60], vol:.5,  rel:.08},
+    guitar:{lo:40, hi:88,  def:[40], vol:.55, rel:.03},
+    bass:  {lo:28, hi:67,  def:[28], vol:.75, rel:.04},
+    drums: {def:['kick','snare']},
+  };
+  const DRUMS={kick:['Kick','K',.9], snare:['Snare','S',.6], hat:['Hi-hat','H',.3],
+               open:['Open hat','O',.3], tom:['Tom','T',.6], crash:['Crash','C',.35]};   // name, short, volume
+  const SEQ_MAX=16;
+  const keyName = (inst,k) => inst==='drums' ? DRUMS[k][0] : noteName(k);
+  const keyShort = (inst,k) => inst==='drums' ? DRUMS[k][1] : noteName(k);
+
+  const rnd = () => Math.random()*2-1;
+  function highpass(x, fc, sr){              // one-pole, in place
+    const a=1/(1+2*Math.PI*fc/sr); let px=0, py=0;
+    for(let i=0;i<x.length;i++){ const v=x[i]; py=a*(py+v-px); px=v; x[i]=py; }
+    return x;
+  }
+  // plucked string: a noise burst circulating through a lossy averaging delay line.
+  // The delay is a whole number of samples, so playbackRate corrects the pitch.
+  function string(sr, f, bright, t60, secs){
+    const N=Math.max(2,Math.floor(sr/f-.5)), y=new Float32Array(Math.floor(sr*secs));
+    let lp=0, mean=0; const ex=new Float32Array(N), pp=Math.max(1,Math.round(N*.13));
+    for(let i=0;i<N;i++){ lp+=bright*(rnd()-lp); ex[i]=lp; }
+    for(let i=0;i<N;i++){ y[i]=ex[i]-.8*ex[(i-pp+N)%N]; mean+=y[i]/N; }   // pick position comb
+    for(let i=0;i<N;i++) y[i]-=mean;
+    const rho=10**(-3/(f*t60));               // loss per trip round the loop
+    y[N]=rho*y[0];
+    for(let i=N+1;i<y.length;i++) y[i]=rho*.5*(y[i-N]+y[i-N-1]);
+    return {data:y, rate:f*(N+.5)/sr};
+  }
+  // piano: stretched partials with two-stage decay, a detuned second string, a hammer thump
+  function piano(sr, f, secs){
+    const y=new Float32Array(Math.floor(sr*secs)), B=.0001;
+    const K=Math.min(14, Math.floor(sr/2.2/f));
+    for(let k=1;k<=K;k++){
+      const a=Math.abs(Math.sin(Math.PI*k*.12))/k**1.2;
+      const d=(.5+f/300)*(1+k*.4);           // decay rate: higher notes and partials die faster
+      const e1=Math.exp(-d/sr), e2=Math.exp(-d/6/sr);
+      for(const det of [1, 1.0009]){
+        const w=2*Math.PI*f*k*Math.sqrt(1+B*k*k)*det/sr, c2=2*Math.cos(w);
+        let s1=0, s2=-Math.sin(w), v1=a*.7, v2=a*.3;
+        for(let i=0;i<y.length;i++){
+          const s=c2*s1-s2; s2=s1; s1=s;      // sine by recurrence
+          y[i]+=s*(v1+v2); v1*=e1; v2*=e2;
+        }
+      }
+    }
+    let lp=0;
+    for(let i=0;i<y.length;i++){
+      if(i<sr*.003) y[i]*=i/(sr*.003);
+      if(i<sr*.03){ lp+=.08*(rnd()-lp); y[i]+=lp*Math.exp(-i/(sr*.008))*.8; }
+    }
+    return {data:y, rate:1};
+  }
+  const METAL=[205.3,304.4,369.6,522.7,540,800];  // 808-style cymbal oscillators
+  function drum(k, sr){
+    const secs={kick:.5, snare:.35, hat:.15, open:.7, tom:.6, crash:2}[k];
+    const y=new Float32Array(Math.floor(sr*secs)); let ph=0;
+    const metal=(i)=>METAL.reduce((s,f)=>s+(Math.floor(2*f*i/sr)%2?1:-1),0)/6;
+    if(k==='kick'||k==='tom'){
+      const [f1,f0,tf,ta]= k==='kick' ? [45,95,.035,.14] : [115,60,.08,.2];
+      for(let i=0;i<y.length;i++){
+        const t=i/sr; ph+=2*Math.PI*(f1+f0*Math.exp(-t/tf))/sr;
+        y[i]=Math.sin(ph)*Math.exp(-t/ta) + rnd()*Math.exp(-t/.003)*.3;
+      }
+    } else if(k==='snare'){
+      const n=highpass(Float32Array.from(y,rnd),1200,sr);
+      for(let i=0;i<y.length;i++){ const t=i/sr; y[i]=Math.sin(2*Math.PI*185*t)*Math.exp(-t/.045)*.6 + n[i]*Math.exp(-t/.09); }
+    } else {
+      const tau={hat:.025, open:.22, crash:.55}[k], mix=k==='crash'?.4:.6;
+      for(let i=0;i<y.length;i++) y[i]=metal(i)*mix + rnd()*(1-mix);
+      highpass(highpass(y,6000,sr),6000,sr);
+      for(let i=0;i<y.length;i++) y[i]*=Math.exp(-i/sr/tau)*(i<sr*.002?i/(sr*.002):1);
+    }
+    return {data:y, rate:1};
+  }
+  const bufs=new Map();
+  function sound(inst, k){
+    const id=inst+':'+k; if(bufs.has(id)) return bufs.get(id);
+    const c=ac(), sr=c.sampleRate;
+    const {data,rate} = inst==='drums' ? drum(k,sr)
+      : inst==='piano' ? piano(sr,hz(k),4)
+      : string(sr, hz(k), inst==='bass'?.12:.55, inst==='bass'?3.5:3, 4.5);
+    let peak=0; for(const v of data) peak=Math.max(peak,Math.abs(v));
+    if(peak>0) for(let i=0;i<data.length;i++) data[i]/=peak;
+    const buf=c.createBuffer(1,data.length,sr); buf.copyToChannel(data,0);
+    const s={buf,rate}; bufs.set(id,s); return s;
+  }
+  let openHat=null;
+  function voice(out, inst, k, time, dur, n){
+    const c=ac(), {buf,rate}=sound(inst,k), src=c.createBufferSource(), g=c.createGain();
+    src.buffer=buf; src.playbackRate.value=rate;
+    src.connect(g).connect(out); src.start(time);
+    g.gain.setValueAtTime((inst==='drums'?DRUMS[k][2]:INSTS[inst].vol)/Math.sqrt(n), time);
+    if(inst==='drums'){
+      if((k==='hat'||k==='open') && openHat){ openHat.gain.setTargetAtTime(0,time,.012); openHat=null; }  // choke
+      if(k==='open') openHat=g;
+    } else {
+      const end=time+Math.max(dur-.01,.05), rel=INSTS[inst].rel;
+      g.gain.setTargetAtTime(0,end,rel); src.stop(end+rel*8);
+    }
+  }
+  // one rhythm note: the next note of the sequence, or the whole sequence at once
+  function playNote(out, time, dur, si){
+    const inst=S.inst, seq=S.seqs[inst];
+    const ks = S.chord ? seq : [seq[si%seq.length]];
+    ks.forEach((k,j)=>voice(out, inst, k, time+(S.chord && inst==='guitar' ? j*.012 : 0), dur, ks.length));  // strum
+  }
+  // position of a note in the sequence: sounding notes counted from bar 1 of the phrase
+  function seqIndex(rows, row, ni){
+    let k=0;
+    for(let r=0;r<row;r++) for(const n of rows[r]) if(!n.rest) k++;
+    for(let i=0;i<ni;i++) if(!rows[row][i].rest) k++;
+    return k;
   }
 
   // ---------- scheduler ----------
@@ -618,8 +790,9 @@
       P.rows[P.row].forEach((nt,ni)=>{
         if(nt.rest || nt.t<q0-1e-6 || nt.t>=q1-1e-6) return;
         const tt=t+(nt.t-q0)*q;
-        if(S.notes) pluck(P.out, tt);
-        hits.push({rows:P.rows, row:P.row, ni, t:tt});
+        const si=seqIndex(P.rows, P.row, ni);
+        if(S.notes) playNote(P.out, tt, nt.d*q, si);
+        hits.push({rows:P.rows, row:P.row, ni, si, t:tt});
       });
       P.next+=dt;
       if(++P.pulse>=n){ P.pulse=0; P.row=(P.row+1)%4; }
@@ -662,6 +835,8 @@
       const h=hits.shift();
       const el=h.rows===shown && noteEls[h.row][h.ni];
       if(el){ el.classList.add('hit'); setTimeout(()=>el.classList.remove('hit'),120); }
+      const tok=!S.chord && $('seq').children[h.si%S.seqs[S.inst].length];
+      if(tok){ tok.classList.add('hit'); setTimeout(()=>tok.classList.remove('hit'),120); }
       if(S.hap && navigator.vibrate) navigator.vibrate(18);
     }
   }
@@ -677,7 +852,8 @@
   const TOGGLES=[['tgMet','met'],['tgNotes','notes'],['tgHap','hap'],['tgCount','countIn']];
   function save(){
     try{ localStorage.setItem(KEY, JSON.stringify({bpm:S.bpm, sig:S.sig, level:S.level,
-      met:S.met, notes:S.notes, hap:S.hap, countIn:S.countIn})); }catch(e){}
+      met:S.met, notes:S.notes, hap:S.hap, countIn:S.countIn,
+      inst:S.inst, seqs:S.seqs, chord:S.chord})); }catch(e){}
   }
   function load(){
     let o; try{ o=JSON.parse(localStorage.getItem(KEY)); }catch(e){}
@@ -686,6 +862,14 @@
     if(Number.isInteger(o.level) && LEVELS[o.level]) S.level=o.level;
     if(Number.isFinite(o.bpm)) S.bpm=o.bpm;
     for(const [,k] of TOGGLES) if(typeof o[k]==='boolean') S[k]=o[k];
+    if(INSTS[o.inst]) S.inst=o.inst;
+    if(typeof o.chord==='boolean') S.chord=o.chord;
+    for(const i in INSTS) if(o.seqs && validSeq(i,o.seqs[i])) S.seqs[i]=o.seqs[i];
+  }
+  function validSeq(inst, a){
+    return Array.isArray(a) && a.length>=1 && a.length<=SEQ_MAX && a.every(k => inst==='drums'
+      ? typeof k==='string' && Object.hasOwn(DRUMS,k)
+      : Number.isInteger(k) && k>=INSTS[inst].lo && k<=INSTS[inst].hi);
   }
   // the current phrase (bars 1–3 and bar 4) survives reloads, edits included
   const ROWS_KEY='rhythm.rows.v1';
@@ -751,6 +935,62 @@
 
   $('genBtn').addEventListener('click',regen);
 
+  // instrument + note sequence. Keys and pads append to the sequence, tapping a
+  // note in the sequence removes it; every tap also auditions the sound.
+  const kbOct={};                                // keyboard octave shown, per instrument
+  const octOf = m => Math.floor(m/12)-1;
+  const WHITE=[0,2,4,5,7,9,11], BLACK=[[1,1],[3,2],[6,4],[8,5],[10,6]];   // [semitone, white keys to its left]
+  function renderNotes(){
+    const inst=S.inst, seq=S.seqs[inst], drums=inst==='drums', x=seq.length>1;
+    selChip('instChips','inst',inst); selChip('modeChips','mode',S.chord?'chord':'turn');
+    $('seq').innerHTML=seq.map((k,i)=>`<button class="tok" data-i="${i}" aria-label="${x?'Remove ':''}${keyName(inst,k)}">`
+      + `${keyName(inst,k)}${x?'<span class="x">×</span>':''}</button>`).join('');
+    $('octCtl').hidden=drums;
+    if(drums){
+      $('keys').innerHTML='<div class="pads">'+Object.keys(DRUMS).map(k=>
+        `<button class="pad${seq.includes(k)?' on':''}" data-k="${k}">${DRUMS[k][0]}</button>`).join('')+'</div>';
+    } else {
+      const {lo,hi}=INSTS[inst], o0=octOf(lo), o1=octOf(hi);
+      const o=kbOct[inst]=Math.max(o0,Math.min(o1, kbOct[inst] ?? octOf(seq[0]))), base=(o+1)*12;
+      const key=(m,cls,style='')=>`<button class="${cls}${seq.includes(m)?' on':''}" data-k="${m}" ${style}`
+        + ` aria-label="${noteName(m)}"${m<lo||m>hi?' disabled':''}>`;
+      $('keys').innerHTML='<div class="kb">'
+        + WHITE.map(st=>key(base+st,'kw')+(st===0?noteName(base):NAMES[st])+'</button>').join('')
+        + BLACK.map(([st,w])=>key(base+st,'kbk',`style="left:${w/7*100}%"`)+'</button>').join('')
+        + '</div>';
+      $('octLbl').textContent='Octave '+o; $('octDown').disabled=o<=o0; $('octUp').disabled=o>=o1;
+    }
+    $('seqHint').textContent = (seq.length>=SEQ_MAX ? `Up to ${SEQ_MAX} notes` : `Tap ${drums?'drums':'keys'} to add notes`)
+      + (x ? ' · tap a note above to remove it' : '');
+    if(shown) render(shown);                     // note labels under the heads
+  }
+  function audition(k){
+    const c=ac(); if(c.state!=='running') c.resume();
+    voice(c.destination, S.inst, k, c.currentTime+.02, .6, 1);
+  }
+  $('keys').addEventListener('click',e=>{
+    const b=e.target.closest('button[data-k]'); if(!b) return;
+    const k=S.inst==='drums' ? b.dataset.k : +b.dataset.k, seq=S.seqs[S.inst];
+    audition(k);
+    if(seq.length<SEQ_MAX){ S.seqs[S.inst]=[...seq,k]; save(); renderNotes(); }
+  });
+  $('seq').addEventListener('click',e=>{
+    const b=e.target.closest('.tok'); if(!b) return;
+    const seq=S.seqs[S.inst];
+    if(seq.length<2){ audition(seq[0]); return; }  // the sequence never goes empty
+    S.seqs[S.inst]=seq.filter((_,i)=>i!==+b.dataset.i); save(); renderNotes();
+  });
+  $('instChips').addEventListener('click',e=>{
+    const b=e.target.closest('.chip'); if(!b) return;
+    S.inst=b.dataset.inst; save(); renderNotes();
+  });
+  $('modeChips').addEventListener('click',e=>{
+    const b=e.target.closest('.chip'); if(!b) return;
+    S.chord=b.dataset.mode==='chord'; save(); renderNotes();
+  });
+  $('octDown').addEventListener('click',()=>{ kbOct[S.inst]--; renderNotes(); });
+  $('octUp').addEventListener('click',()=>{ kbOct[S.inst]++; renderNotes(); });
+
   // tap tempo
   let taps=[];
   function tap(){
@@ -790,13 +1030,14 @@
   }
 
   // init
+  for(const i in INSTS) S.seqs[i]=INSTS[i].def.slice();
   load();
   selChip('sigChips','sig',S.sig); setLevel(S.level);
   for(const [id,key] of TOGGLES) syncToggle(id,key);
   $('sig').textContent=S.sig; setLabel(null);
   setBpm(S.bpm);
   if(!loadRows()) regen();
-  updateUndo();
+  renderNotes(); updateUndo();
 })();
 </script>
 </body>

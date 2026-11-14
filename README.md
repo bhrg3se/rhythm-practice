@@ -3,7 +3,8 @@
 A random rhythm generator and metronome for guitar/bass practice. Each phrase is
 4 bars: bars 1–3 repeat the same rhythm, bar 4 is a variation. Notes are drawn as
 real notation (whole → 16th, triplets, dotted values, rests) with a sweeping
-playhead, an accented click, and an optional pluck on every note.
+playhead, an accented click, and the rhythm played on piano, guitar, bass or
+drums, using notes you pick.
 
 Plain HTML/CSS/JS. No dependencies, no build step. The whole app lives in
 `index.html`; the other files only add home-screen install and offline support.
@@ -46,6 +47,13 @@ Bars 1–3 share one rhythm (editing one edits all three); bar 4 is separate, an
 *Copy* duplicates one into the other as a starting point. Edits work while
 playing and are heard from the next click. The current phrase, edits included,
 is restored on reload.
+
+**Instrument and notes:** pick an instrument, then tap keys (or drum pads) to
+build a sequence of notes. *In turn* plays them one per rhythm note, cycling, so
+`E2 G2 A2` becomes a riff; each note head is labelled with the note it plays, and
+the sequence restarts at bar 1 of every phrase. *Together* plays the whole sequence on
+every note, as a chord (strummed on guitar) or layered drums. Tap a note in the
+sequence to remove it. Each instrument keeps its own sequence.
 
 Keyboard: `Space` play/stop · `N` new rhythm · `T` tap tempo · `0`–`5` level ·
 `U` / `Ctrl+Z` undo · `←`/`→` move the edit selection · `Esc` close the editor ·
@@ -136,13 +144,31 @@ inside one beat group with no rest between them are beamed: one primary beam, a
 secondary beam between adjacent 16ths, and a stub for a lone 16th. A beamed
 triplet gets a "3" over the beam; a triplet broken by a rest gets a bracket. Colours come from `currentColor`, so the variation bar turns coral via CSS.
 
+### Instruments
+
+All sounds are synthesised in JS, with no samples. The first time a sound is needed, it is
+rendered into an `AudioBuffer` and cached:
+
+- **guitar / bass:** Karplus–Strong, a burst of noise circulating through an
+  averaging delay line. The delay is a whole number of samples, so `playbackRate`
+  corrects the pitch exactly. Bass uses a smoothed (darker) excitation.
+- **piano:** additive, with slightly stretched partials that each decay in two stages, a detuned
+  second string, and a short hammer thump.
+- **drums:** sine sweeps for kick and tom, tone + filtered noise for the snare,
+  808-style square-wave clusters for hats and crash. A hi-hat chokes an open hat.
+
+Pitched notes are damped at the end of their notated length, so rests and note
+lengths are audible. A note's place in the sequence is `seqIndex()`: the number of
+sounding notes before it since bar 1, so edits and the labels always agree with
+what plays.
+
 ### Audio scheduler
 
 This is the standard Web Audio look-ahead pattern. A 25 ms `setInterval` schedules
 sounds up to 150 ms ahead on the sample-accurate `AudioContext` clock, so timer
 jitter doesn't affect timing. It schedules **one pulse at a time**:
 
-- the click for that pulse, plus a pluck for every note starting inside it
+- the click for that pulse, plus an instrument voice for every note starting inside it
 - a **segment** `{row, q0, q1, t0, t1}` that maps that slice of the bar to audio
   time, which the animation frame interpolates to move the playhead
 
@@ -154,4 +180,5 @@ already-scheduled clicks are silenced. If the tab was throttled, the scheduler
 skips ahead instead of firing a backlog. A Screen Wake Lock keeps the screen on
 while playing, because Android throttles timers once the screen sleeps.
 
-Settings (tempo, meter, level, toggles) persist in `localStorage`.
+Settings (tempo, meter, level, toggles, instrument, note sequences) persist in
+`localStorage`.

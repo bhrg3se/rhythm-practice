@@ -2,7 +2,7 @@
 // immediately), fall back to the cache when offline. Cross-origin requests
 // (support links, any future ad/analytics scripts) are never touched.
 "use strict";
-const CACHE = "rhythm-v1";
+const CACHE = "rhythm-v2";
 const ASSETS = [
   "./", "./index.html", "./manifest.webmanifest",
   "./icons/icon.svg", "./icons/icon-180.png", "./icons/icon-192.png", "./icons/icon-512.png",
